@@ -1,46 +1,38 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.28;
-import {IERC20} from "node_modules/@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 //forge cant compile this shit
 //import {IAToken} from 'node_modules/@aave/protocol-v2/contracts/interfaces/IAToken.sol';
 //import {ILendingPool} from 'node_modules/@aave/protocol-v2/contracts/interfaces/ILendingPool.sol';
 
 interface IAToken {
-    function UNDERLYING_ASSET_ADDRESS() external returns (address);
+    function UNDERLYING_ASSET_ADDRESS() external view returns (address);
 }
 
 interface ILendingPool {
-    function withdraw(
-        address token,
-        uint256 amount,
-        address recipient
-    ) external;
+    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
 
-    function getUserAccountData(
-        address user
-    )
-        external
-        view
-        returns (
-            uint256 totalCollateralBase,
-            uint256 totalDebtBase,
-            uint256 availableBorrowsBase,
-            uint256 currentLiquidationThreshold,
-            uint256 ltv,
-            uint256 healthFactor
-        );
+    function getUserAccountData(address user) external view
+    returns (
+        uint256 totalCollateralBase,
+        uint256 totalDebtBase,
+        uint256 availableBorrowsBase,
+        uint256 currentLiquidationThreshold,
+        uint256 ltv,
+        uint256 healthFactor
+    );
 }
 
 interface IAaveOracle {
-    function getAssetPrice(address underlyingToken) external returns (uint256);
+    function getAssetPrice(address asset) external view returns (uint256);
 }
 
 contract Uppies {
     event CreateUppie(address aaveAccount, uint256 _uppiesIndex);
     event RemoveUppie(address aaveAccount, uint256 _uppiesIndex);
     event FillUppie(address aaveAccount, uint256 _uppiesIndex);
-    uint256 constant topUpGas = 0;
+    uint256 constant topUpGas = 373000;
 
     address aavePoolInstance;
     address aaveOracle;
@@ -60,7 +52,8 @@ contract Uppies {
     }
 
     // more gas efficient maxing would be offchain sigs or onchain as calldata
-    mapping(address => Uppie[]) public uppiesPerUser;
+    //TODO check if mapping(address => Uppie[]) is cheaper
+    mapping(address => mapping ( uint256 => Uppie)) public uppiesPerUser;
 
     function createUppie(
         address _recipientAccount,
@@ -95,24 +88,26 @@ contract Uppies {
 
     function fillUppie(uint256 _uppiesIndex, address aaveAccount) public {
         Uppie memory uppie = uppiesPerUser[aaveAccount][_uppiesIndex];
-        IERC20 underlyingToken = IERC20(uppie.underlyingToken);
 
-        uint256 recipientBalance = underlyingToken.balanceOf(uppie.recipientAccount);
-        require(recipientBalance < uppie.topUpThreshold);
-        require(block.basefee < uppie.maxBaseFee);
+        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipientAccount);
+        require(recipientBalance < uppie.topUpThreshold, "user balance not below topup threshold");
+        require(block.basefee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
 
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
-        uint256 txFee = block.basefee *topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
-        ILendingPool(uppie.aaveToken).withdraw(
+        uint256 txFee = block.basefee * topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
+        IERC20(uppie.aaveToken).transferFrom(aaveAccount, address(this), topUpSize+txFee);
+        ILendingPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
             topUpSize + txFee,
             address(this)
         );
-        // kinda dumb doing this after gas wise but fuck it. just dont fail ok?
-        (, , , , , uint256 currentHealthFactor) = ILendingPool(uppie.aaveToken).getUserAccountData(aaveAccount);
+
+        // health factor check just incase user used the token as collateral.
+        // kinda dumb doing this after withdraw gas wise but fuck it. just dont fail ok?
+        (, , , , , uint256 currentHealthFactor) = ILendingPool(aavePoolInstance).getUserAccountData(aaveAccount);
         require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");
-        underlyingToken.transferFrom(address(this),uppie.recipientAccount,topUpSize);
-        underlyingToken.transferFrom(address(this), msg.sender, txFee);
+        IERC20(uppie.underlyingToken).transfer(uppie.recipientAccount,topUpSize);
+        IERC20(uppie.underlyingToken).transfer(msg.sender, txFee);
         emit FillUppie(aaveAccount, _uppiesIndex);
     }
 }

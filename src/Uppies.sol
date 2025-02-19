@@ -29,9 +29,9 @@ interface IAaveOracle {
 }
 
 contract Uppies {
-    event CreateUppie(address aaveAccount, uint256 _uppiesIndex);
-    event RemoveUppie(address aaveAccount, uint256 _uppiesIndex);
-    event FillUppie(address aaveAccount, uint256 _uppiesIndex);
+    event CreateUppie(address payee, uint256 _uppiesIndex);
+    event RemoveUppie(address payee, uint256 _uppiesIndex);
+    event FillUppie(address payee, uint256 _uppiesIndex);
     uint256 constant topUpGas = 373000;
 
     address aavePoolInstance;
@@ -42,7 +42,7 @@ contract Uppies {
     }
 
     struct Uppie {
-        address recipientAccount;
+        address recipient;
         address aaveToken;
         address underlyingToken;
         uint256 topUpThreshold; // when to Uppies
@@ -86,16 +86,28 @@ contract Uppies {
         emit CreateUppie(msg.sender, _uppiesIndex);
     }
 
-    function fillUppie(uint256 _uppiesIndex, address aaveAccount) public {
-        Uppie memory uppie = uppiesPerUser[aaveAccount][_uppiesIndex];
+    function fillUppie(uint256 _uppiesIndex, address payee) public {
+        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
-        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipientAccount);
+        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
+        uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
+        
+        require(payeeBalance != 0, "payee is broke");
         require(recipientBalance < uppie.topUpThreshold, "user balance not below topup threshold");
         require(block.basefee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
 
+        // TODO if topUpSize > aaveAccountBalance. send entire balance instead
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
         uint256 txFee = block.basefee * topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
-        IERC20(uppie.aaveToken).transferFrom(aaveAccount, address(this), topUpSize+txFee);
+        uint256 totalWithdraw = topUpSize + txFee;
+        
+        // not enough money? just send what you got
+        if (payeeBalance < totalWithdraw) {
+            totalWithdraw = payeeBalance;
+            topUpSize = payeeBalance - txFee;
+        }
+
+        IERC20(uppie.aaveToken).transferFrom(payee, address(this), topUpSize+txFee);
         ILendingPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
             topUpSize + txFee,
@@ -103,11 +115,11 @@ contract Uppies {
         );
 
         // health factor check just incase user used the token as collateral.
-        // kinda dumb doing this after withdraw gas wise but fuck it. just dont fail ok?
-        (, , , , , uint256 currentHealthFactor) = ILendingPool(aavePoolInstance).getUserAccountData(aaveAccount);
+        // needs to be after the withdraw so we can see if it went bad.
+        (, , , , , uint256 currentHealthFactor) = ILendingPool(aavePoolInstance).getUserAccountData(payee);
         require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");
-        IERC20(uppie.underlyingToken).transfer(uppie.recipientAccount,topUpSize);
+        IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
         IERC20(uppie.underlyingToken).transfer(msg.sender, txFee);
-        emit FillUppie(aaveAccount, _uppiesIndex);
+        emit FillUppie(payee, _uppiesIndex);
     }
 }

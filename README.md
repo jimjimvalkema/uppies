@@ -73,3 +73,7 @@ forge create --broadcast --private-key 0xPRIVATEKEY --rpc-url https://rpc.gnosis
 ```
 
 deployment: https://gnosisscan.io/address/0x88c96330c65b7c4697285ba6cd1f1ed1ba60fadd
+
+```shell
+node uppiesFiller/uppiesFiller.js --privateKey 0xPRIVATEKEY
+```

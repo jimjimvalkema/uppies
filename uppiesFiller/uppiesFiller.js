@@ -1,19 +1,19 @@
 import { ArgumentParser } from 'argparse';
 import { ethers } from "ethers";
 import uppiesDeployment from "../out/Uppies.sol/Uppies.json"  with { type: "json" };
+import erc20ABI from "./erc20ABI.json"  with { type: "json" };
 
 const delay = async (time) => await new Promise(resolve => setTimeout(resolve, time));
 
-async function queryEventInChunks({chunksize=5000,filter,startBlock,contract}){
+async function queryEventInChunks({chunksize=20000,filter,startBlock, endBlock,contract}){
     const provider = contract.runner.provider
-    const lastBlock = await provider.getBlockNumber("latest")
+    const lastBlock = endBlock ? endBlock : await provider.getBlockNumber("latest")
     const numIters = Math.ceil((lastBlock-startBlock)/chunksize)
     const allEvents = []
     console.log("scanning events: ",{lastBlock,startBlock,chunksize,numIters})
     for (let index = 0; index < numIters; index++) {
         const start = index*chunksize + startBlock
         const stop =  (start + chunksize) > lastBlock ? lastBlock :  (start + chunksize)
-        console.log({filter,start,stop})
         const events =  await contract.queryFilter(filter,start,stop)
         allEvents.push(events)
     }
@@ -21,27 +21,69 @@ async function queryEventInChunks({chunksize=5000,filter,startBlock,contract}){
 }
 
 
-async function syncUppies({preSyncedUppies={},chunksize=5000,filter,startBlock,uppiesContract}) {    
+async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,endBlock,uppiesContract}) {    
+    const structNames = ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
+
     const createFilter = uppiesContract.filters.CreateUppie()
     const removeFilter = uppiesContract.filters.RemoveUppie()
-    const createEvents = await queryEventInChunks({chunksize,filter,startBlock,contract})
-    const removeEvents = await queryEventInChunks({chunksize,filter,startBlock,contract})
+    const createEvents = await queryEventInChunks({chunksize,filter:createFilter,startBlock,endBlock,contract:uppiesContract})
+    const removeEvents = await queryEventInChunks({chunksize,filter:removeFilter,startBlock,endBlock,contract:uppiesContract})
 
     //remove uppies from createEvents
 
     // make object with know uppies {"payee":[uppieIndexs]}
-    const newUppies = {}
-    for (key of Object.keys(newUppies)) {
-        await uppiesContract.uppiesPerUser(payee, index)
+    const newUppies = createEvents.map((event)=> [event.args[0], event.args[1]]);
+    const removedUppies = removeEvents.map((event)=> [event.args[0], event.args[1]]);
+    // preSyncedUppies = {"0x0":[uppie,uppie],"0x1":[uppie,uppie,uppie]}
+    // preSyncedUppiesArr = [["0x0",0],["0x0",1],["0x1",0],["0x1",1],["0x1",2]]
+    const preSyncedUppiesArr = Object.keys(preSyncedUppies).map((key)=>preSyncedUppies[key].map((uppie)=> [key, uppie.uppiesIndex])).flat()
+    const allUppiesArr = [...preSyncedUppiesArr, ...newUppies]
+    for (const removedUppie of removedUppies) {
+        const removeIndex = allUppiesArr.findIndex((uppie)=>uppie.address === removedUppie.address &&  uppie.index === removedUppie.index)
+        allUppiesArr.splice(removeIndex,1)
+    }
+
+    const syncedUppies = {}
+    for (const uppies of allUppiesArr) {
+        const address = uppies[0]
+        const index = uppies[1]
+        const struct = Object.fromEntries((await uppiesContract.uppiesPerUser(address, index)).map((item, index)=>[structNames[index], item]))
+        if (!(address in syncedUppies)) {
+            syncedUppies[address] = []
+        }
+        syncedUppies[address][index] = {...struct, payeeAddress: address, uppiesIndex: index}
 
     }
     
+    return syncedUppies
     
 }
 
 
+async function fillUppie({uppie, uppiesContract}) {
+    try {
+        console.log("filling: ",{index: uppie.uppiesIndex, payee: uppie.payeeAddress})
+        const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress, {gasLimit:7000000}) // should be 373000 to is safer
+        console.log((await tx.wait(1)).hash) //slow but prevents from dubbel txs 
+        
+    } catch (error) {
+        console.log(error) 
+    }
+}
+
+async function isFillableUppie({uppie, uppiesContract}) {
+    const provider = uppiesContract.runner.provider
+    const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20ABI,provider)
+    const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipientAccount)
+    // TODO healthfactor and basefee
+    // check approval
+    if (recipientBalance < BigInt(uppie.topUpThreshold)) {
+        return true
+    }
+}
+
 // 5 minutes: 300000
-const updateTime = 3000
+const updateTime = 300000
 const deploymentBlock = 38628840
 
 const parser = new ArgumentParser({
@@ -58,6 +100,9 @@ const provider = new ethers.JsonRpcProvider(args.provider);
 const wallet = new ethers.Wallet(args.privateKey, provider);
 
 const uppiesContract = new ethers.Contract(args.contractAddress,uppiesDeployment.abi,wallet)
+let lastSyncedUppieBlock = await provider.getBlockNumber("latest")
+let startBlock = deploymentBlock
+let uppiesPerPayee = await syncUppies({preSyncedUppies:{},startBlock: deploymentBlock, endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
 
 while (true) {
     // look for CreateUppie and add/update the aaveAccount and index to our watch list
@@ -69,8 +114,16 @@ while (true) {
     // check recipient balance
     // check payee balance > 0.01$
     // TODO check health ratio with simulation
-    const structNames = ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
-    const struct = Object.fromEntries((await uppiesContract.uppiesPerUser("0xf1B42cc7c1609445620dE4352CD7e58353C3FA74", 0)).map((item, index)=>[structNames[index], item]))
-    console.log(struct)
+    lastSyncedUppieBlock = await provider.getBlockNumber("latest")
+    uppiesPerPayee = await syncUppies({preSyncedUppies:uppiesPerPayee,startBlock: startBlock,endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
+    console.log({uppies: uppiesPerPayee})
+    for (const payee in uppiesPerPayee) {
+        for (const uppie of uppiesPerPayee[payee]) {
+            if (await isFillableUppie({uppie, uppiesContract})) {
+                await fillUppie({uppie,uppiesContract})
+            }
+        }
+    }
+    startBlock = lastSyncedUppieBlock
     await delay(updateTime)
 }

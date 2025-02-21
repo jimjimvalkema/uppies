@@ -77,3 +77,8 @@ deployment: https://gnosisscan.io/address/0x88c96330c65b7c4697285ba6cd1f1ed1ba60
 ```shell
 node uppiesFiller/uppiesFiller.js --privateKey 0xPRIVATEKEY
 ```
+
+
+```shell
+yarn vite ui
+```

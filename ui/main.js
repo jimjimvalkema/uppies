@@ -55,6 +55,20 @@ async function getTokenInfo({address, provider}) {
 
 }
 
+function postTxLinkUi(txhash) {
+    const a = document.getElementById("txlink")
+    a.innerText = `https://gnosisscan.io/tx/${txhash}`
+    a.href = `https://gnosisscan.io/tx/${txhash}`
+
+}
+
+async function removeUppieHandler({index, uppiesContract}) {
+    console.log({uppiesContract})
+    const tx = await uppiesContract.removeUppie(index)
+    postTxLinkUi(tx.hash)
+    
+}
+
 async function listAllUppies({address, uppiesContract}) {
     const provider = uppiesContract.runner.provider
     const allUppies = await getAllUppies({address, uppiesContract})
@@ -65,7 +79,7 @@ async function listAllUppies({address, uppiesContract}) {
     }
 
     const existingUppiesUl = document.getElementById("existingUppiesUl")
-    for (const uppie of allUppies) {
+    for (const [index,uppie] of Object.entries(allUppies)) {
         const uppieLi = document.createElement("li")
         const underlyingToken = await getTokenInfo({address: uppie.underlyingToken,provider:provider})
         uppieLi.innerText = `
@@ -74,6 +88,10 @@ async function listAllUppies({address, uppiesContract}) {
         target:${ethers.formatUnits(uppie.topUpTarget, underlyingToken.decimals)}  ${underlyingToken.symbol}
         token:  ${underlyingToken.name}
         `
+        const removeUppieBtn = document.createElement("button")
+        removeUppieBtn.innerText = "remove"
+        removeUppieBtn.addEventListener("click", (event)=>removeUppieHandler({index, uppiesContract}))
+        uppieLi.appendChild(removeUppieBtn)
         existingUppiesUl.appendChild(uppieLi)
         console.log("aaa")
     }
@@ -172,8 +190,32 @@ async function aaveTokenInputHandler({event, provider}) {
     }
 }
 
-async function createUppieHandler({event, uppiesContract}) {
+async function getUppieFromForm({provider}) {
+    const formNodes = document.getElementById("createUppieForm").querySelectorAll("input");
+    const uppie = Object.fromEntries([...formNodes].map((n)=>[n.name,n.value]))
 
+
+    // formatting
+    const underlyingToken = await getTokenInfo({address: uppie.underlyingToken, provider})
+    uppie.topUpThreshold = ethers.parseUnits(uppie.topUpThreshold, underlyingToken.decimals)
+    uppie.topUpTarget = ethers.parseUnits(uppie.topUpTarget, underlyingToken.decimals)
+    uppie.maxBaseFee = BigInt(Number(uppie.maxBaseFee) * 10**9) // convert gwei to wei
+    uppie.minHealthFactor = uppie.minHealthFactor === "" ? 115792089237316195423570985008687907853269984665640564039457584007913129639934n : BigInt( Number(uppie.minHealthFactor) * 10**18)
+    uppie.recipientAccount = ethers.getAddress(uppie.recipientAccount)
+    uppie.payee = ethers.getAddress(uppie.payee)
+    uppie.underlyingToken = ethers.getAddress(uppie.underlyingToken)
+    uppie.aaveToken = ethers.getAddress(uppie.aaveToken)
+    return uppie
+}
+window.getUppieFromForm = getUppieFromForm
+
+async function createUppieHandler({event, uppiesContract}) {
+    const provider = uppiesContract.runner.provider
+    const uppie = await getUppieFromForm({provider})
+    console.log({uppie})
+    const tx = await uppiesContract.createUppie(uppie.recipientAccount, uppie.aaveToken, uppie.topUpThreshold, uppie.topUpTarget, uppie.index, uppie.maxBaseFee, uppie.minHealthFactor)
+    console.log({tx:tx.hash})
+    postTxLinkUi(tx.hash)
 }
 
 async function main() {

@@ -72,14 +72,22 @@ async function fillUppie({uppie, uppiesContract}) {
 }
 
 async function isFillableUppie({uppie, uppiesContract}) {
-    const provider = uppiesContract.runner.provider
-    const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20ABI,provider)
-    const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipientAccount)
-    // TODO healthfactor and basefee
-    // check approval
-    if (recipientBalance < BigInt(uppie.topUpThreshold)) {
-        return true
+    try {
+        const provider = uppiesContract.runner.provider
+        const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20ABI,provider)
+        const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipientAccount)
+        // TODO healthfactor and basefee
+        // check approval
+        if (recipientBalance < BigInt(uppie.topUpThreshold)) {
+            return true
+        }
+        
+    } catch (error) {
+        console.log(erc20ABI)
+        return false
+        
     }
+
 }
 
 // 5 minutes: 300000
@@ -114,16 +122,28 @@ while (true) {
     // check recipient balance
     // check payee balance > 0.01$
     // TODO check health ratio with simulation
-    lastSyncedUppieBlock = await provider.getBlockNumber("latest")
-    uppiesPerPayee = await syncUppies({preSyncedUppies:uppiesPerPayee,startBlock: startBlock,endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
-    console.log({uppies: uppiesPerPayee})
-    for (const payee in uppiesPerPayee) {
-        for (const uppie of uppiesPerPayee[payee]) {
-            if (await isFillableUppie({uppie, uppiesContract})) {
-                await fillUppie({uppie,uppiesContract})
+    try {
+        lastSyncedUppieBlock = await provider.getBlockNumber("latest")
+        uppiesPerPayee = await syncUppies({preSyncedUppies:uppiesPerPayee,startBlock: startBlock,endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
+        console.log({uppies: uppiesPerPayee})
+        for (const payee in uppiesPerPayee) {
+            for (const uppie of uppiesPerPayee[payee]) {
+                if (await isFillableUppie({uppie, uppiesContract})) {
+                    try {
+                        await fillUppie({uppie,uppiesContract})
+                    } catch (error) {
+                        console.log(error)
+                    }
+                    
+                }
             }
         }
+        startBlock = lastSyncedUppieBlock
+        await delay(updateTime)
+        
+    } catch (error) {
+        console.log(error)
+        
     }
-    startBlock = lastSyncedUppieBlock
-    await delay(updateTime)
+
 }

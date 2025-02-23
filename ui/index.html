@@ -13,56 +13,73 @@
   </style>
 </head>
 <body>
-    <script  crossorigin type="module" src="./main.js"></script>
-    <!-- recipientAccount   address :  0xdC237054074a32A50d284340D8f8E5A3C9274A16
-    aaveToken   address :  0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2
-    topUpThreshold   uint256 :  200000000000000000000
-    topUpTarget   uint256 :  220000000000000000000
-    maxBaseFee   uint256 :  10000000000
-    minHealthFactor   uint256 :  115792089237316195423570985008687907853269984665640564039457584007913129639934 -->
-    <form>
-        <label for="recipientAccountInput">recipientAccount:</label>
-        <input type="text" id="recipientAccountInput" name="recipientAccountInput">
-        <br>
-
-        <label for="topUpThresholdInput">topUpThreshold:</label>
-        <input type="text" id="topUpThresholdInput" name="topUpThresholdInput">
-        <br>
-
-        <label for="topUpTargetInput">topUpTarget:</label>
-        <input type="text" id="topUpTargetInput" name="topUpTargetInput">
-        <br>
-
-        <div id="advancedOptions" hidden>
-            <label for="aaveTokenInput">aaveToken:</label>
-            <input type="text" id="aaveTokenInput" name="aaveTokenInput" value="0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2">
-            <span class="aaveTokenName">AAVESTOKENNAME</span>
-            <br>
-    
-    
-            <label for="maxBaseFeeInput">maxBaseFee:</label>
-            <input type="text" id="maxBaseFeeInput" name="maxBaseFeeInput" value="10">
-            <span>gwei</span>
-            <br>
-    
-            <label for="minHealthFactorInput">minHealthFactor:</label>
-            <input type="text" id="minHealthFactorInput" name="minHealthFactorInput"  placeholder="if unsure, leave empty">
+    <div id="createNewUppie">
+        <h2>Create new uppie</h2>
+        <script  crossorigin type="module" src="./main.js"></script>
+        <!-- recipientAccount   address :  0xdC237054074a32A50d284340D8f8E5A3C9274A16
+        aaveToken   address :  0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2
+        topUpThreshold   uint256 :  200000000000000000000
+        topUpTarget   uint256 :  220000000000000000000
+        maxBaseFee   uint256 :  10000000000
+        minHealthFactor   uint256 :  115792089237316195423570985008687907853269984665640564039457584007913129639934 -->
+        <form id="createUppieForm">
+            <label for="recipientAccountInput">recipient account:</label>
+            <input type="text" id="recipientAccountInput" name="recipientAccount">
             <br>
 
-        </div>
+            <label for="topUpThresholdInput">threshold:</label>
+            <input type="number" id="topUpThresholdInput" name="topUpThreshold"><span class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
+            <br>
 
-     
-    </form>
-    <button id="showAdvancedBtn">show advanced options</button>
-    <br>
-    <br>
-    <div class="uppieDescription">
-        This uppie will: top up the recipient account <span class="recipientAccount">0xRECIPIENTACCOUNT</span> when its has less than <span class="topUpThreshold">TOPUPTHRESHOLD</span> <span class="underlyingTokenSymbol">UNDERLYINGSYMBOL</span>
-        until the account has  <span class="topUpTarget">TOPUPTARGET</span> <span class="underlyingTokenSymbol">UNDERLYINGSYMBOL</span>, 
-        with funds on aave from the payee account <span class="payeeAccount">0xPAYEEACOUNT</span> 
+            <label for="topUpTargetInput">target balance:</label>
+            <input type="number" id="topUpTargetInput" name="topUpTarget"><span class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
+            <br>
+
+            <label for="underlyingTokenInput">Token to withdraw:</label>
+            <input type="text" id="underlyingTokenInput" name="underlyingToken" value="0xcB444e90D8198415266c6a2724b7900fb12FC56E" readonly disabled="disabled">
+            <span class="underlyingTokenName">UNDERLYINGTOKENNAME</span>
+            <br>
+
+            <label for="payeeInput">Payee:</label>
+            <input type="text" id="payeeInput" name="payee" value="0x0" readonly disabled="disabled">
+            <br>
+
+            <div id="advancedOptions" hidden>
+                <label for="aaveTokenInput">aaveToken:</label>
+                <input type="text" id="aaveTokenInput" name="aaveToken" value="0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2">
+                <span class="aaveTokenName">AAVESTOKENNAME</span>
+                <br>
+        
+                <label for="maxBaseFeeInput">maxBaseFee:</label>
+                <input type="number" id="maxBaseFeeInput" name="maxBaseFee" value="10">
+                <span>gwei</span>
+                <br>
+        
+                <label for="minHealthFactorInput">minHealthFactor:</label>
+                <input type="number" id="minHealthFactorInput" name="minHealthFactor"  placeholder="if unsure, leave empty">
+                <br>
+
+                <label for="uppieIndex">uppieIndex:</label>
+                <input type="number" id="uppieIndexInput" name="index">
+                <br>
+
+            </div>
+
+        
+        </form>
+        <button id="showAdvancedBtn">show advanced options</button>
+        <br>
+
+        <button id="createUppie">create uppie</button>
+        <br>
+        <br>
+    </div>
+    <div id="existingUppies" hidden >
+        <h2 >all your uppies!!! </h1>
+        <ul id="existingUppiesUl">
+
+        </ul>
 
     </div>
-
-    <button id="createUppie">create uppie</button>
 
 </body>

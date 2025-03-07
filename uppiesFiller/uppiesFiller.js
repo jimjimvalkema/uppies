@@ -91,7 +91,7 @@ async function isFillableUppie({uppie, uppiesContract}) {
         const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20ABI,provider)
         const aaveTokenContract = new ethers.Contract(uppie.aaveToken, erc20ABI,provider)
         const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipientAccount)
-        const payeeBalance = await aaveTokenContract.balanceOf(uppie.recipientAccount)
+        const payeeBalance = await aaveTokenContract.balanceOf(uppie.payeeAddress)
        
         // TODO healthfactor and basefee
         const approval =  await aaveTokenContract.allowance(uppie.payeeAddress, uppiesContract.target)

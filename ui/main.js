@@ -119,16 +119,18 @@ function topUpThresholdInputHandler(event) {
     setClassWithEvent("topUpThreshold",event)
 }
 
-function topUpTargetInputHandler(event) {
+async function topUpTargetInputHandler(event, provider) {
     const topUpTargetEl = document.getElementById("topUpTargetInput")
     const topUpThresholdEl = document.getElementById("topUpThresholdInput")
-    console.log(Number(topUpTargetEl.value), Number(topUpThresholdEl.value) )
+    //console.log(Number(topUpTargetEl.value), Number(topUpThresholdEl.value) )
     if (Number(topUpTargetEl.value) < Number(topUpThresholdEl.value) ) {
     
         topUpThresholdEl.value  = topUpTargetEl.value 
         setClassWithEvent("topUpThreshold",event)
     }
     setClassWithEvent("topUpTarget",event)
+    console.log((Number(topUpTargetEl.value)*20).toString())
+    document.getElementById("aaveTokenPermissionInput").value = (Number(topUpTargetEl.value)*20).toString()
 }
 
 function setClassWithEvent(classname,event) {
@@ -170,18 +172,23 @@ function setClass({classname, value}) {
     } 
 }
 
-async function aaveTokenInputHandler({event, provider}) {
+async function aaveTokenInputHandler({event, signer, provider}) {
     const aaveTokenAddress = event.target.value
     if (ethers.isAddress(aaveTokenAddress)) {
         const aaveTokenContract = new ethers.Contract(aaveTokenAddress,ATokenABI,provider)
-        const underlyingTokenAddress = await aaveTokenContract.UNDERLYING_ASSET_ADDRESS()
-        const underlyingToken = await getTokenInfo({address:underlyingTokenAddress, provider}) 
-        const aaveToken = await getTokenInfo({address:aaveTokenAddress, provider}) 
+        const underlyingTokenAddress =  aaveTokenContract.UNDERLYING_ASSET_ADDRESS()
+        const underlyingToken =  getTokenInfo({address:(await underlyingTokenAddress), provider}) 
+        const aaveToken =  getTokenInfo({address:aaveTokenAddress, provider}) 
+        const currentAaveTokenAllowance = aaveTokenContract.allowance(signer.address, CONTRACT_ADDRESS)
+        document.getElementById("currentAllowance").innerText = Math.round(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveToken).decimals)*10000)/10000
 
-        document.getElementById("underlyingTokenInput").value = underlyingTokenAddress
-        setClass({classname:"underlyingTokenName", value:underlyingToken.name})
-        setClass({classname:"underlyingTokenSymbol", value:underlyingToken.symbol})
-        setClass({classname:"aaveTokenName", value:aaveToken.name})
+        document.getElementById("underlyingTokenInput").value = await underlyingTokenAddress
+        setClass({classname:"underlyingTokenName", value:(await underlyingToken).name})
+        setClass({classname:"underlyingTokenSymbol", value:(await underlyingToken).symbol})
+        setClass({classname:"aaveTokenName", value:(await aaveToken).name})
+        setClass({classname:"aaveTokenSymbol", value:(await aaveToken).symbol})
+
+        window.decimals = await aaveTokenContract.decimals()
     } else {
         document.getElementById("underlyingTokenInput").value = ""
         setClass({classname:"underlyingTokenName", value:""})
@@ -211,11 +218,34 @@ window.getUppieFromForm = getUppieFromForm
 
 async function createUppieHandler({event, uppiesContract}) {
     const provider = uppiesContract.runner.provider
+    const signer = uppiesContract.runner
     const uppie = await getUppieFromForm({provider})
-    console.log({uppie})
-    const tx = await uppiesContract.createUppie(uppie.recipientAccount, uppie.aaveToken, uppie.topUpThreshold, uppie.topUpTarget, uppie.index, uppie.maxBaseFee, uppie.minHealthFactor)
-    console.log({tx:tx.hash})
-    postTxLinkUi(tx.hash)
+   
+    const allowanceTx = await setAllowance({event, uppiesContract, signer})
+    const tx = uppiesContract.createUppie(uppie.recipientAccount, uppie.aaveToken, uppie.topUpThreshold, uppie.topUpTarget, uppie.index, uppie.maxBaseFee, uppie.minHealthFactor)
+    console.log({tx:(await tx).hash})
+    postTxLinkUi((await tx).hash)
+}
+
+async function setAllowance({event, uppiesContract, signer, allowLowering=false}) {
+    console.log({signer})
+    const provider = uppiesContract.runner.provider
+    console.log("hiiiiiiiiiiii")
+    const aaveTokenAddress = document.getElementById("aaveTokenInput").value
+    const aaveTokenContract = new ethers.Contract(aaveTokenAddress,ATokenABI,signer)
+    const decimals =  await aaveTokenContract.decimals()
+    console.log({decimals})
+    aaveTokenContract.connect(signer)
+    const allowanceUi = ethers.parseUnits(document.getElementById("aaveTokenPermissionInput").value, await aaveTokenContract.decimals())
+    const allowanceChain = await aaveTokenContract.allowance(signer.address, CONTRACT_ADDRESS)
+    if (allowanceUi >  allowanceChain || allowLowering) {
+        const tx = aaveTokenContract.approve(CONTRACT_ADDRESS, allowanceUi)
+        postTxLinkUi((await tx).hash)
+        return tx
+
+    }
+
+    
 }
 
 async function main() {
@@ -225,7 +255,7 @@ async function main() {
     window.uppiesContract = uppiesContract
 
     document.getElementById("payeeInput").value = signer.address
-    await aaveTokenInputHandler({event:{target:{value:"0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2"}}, provider})
+    await aaveTokenInputHandler({event:{target:{value:"0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2"}}, signer, provider})
 
     await listAllUppies({address: signer.address, uppiesContract})
 
@@ -233,15 +263,18 @@ async function main() {
     document.getElementById("showAdvancedBtn").addEventListener("click", ((event)=>showAdvancedBtnHandler()))
     document.getElementById("recipientAccountInput").addEventListener("keyup", ((event)=>setClassWithEvent("recipientAccount",event)))
     document.getElementById("topUpThresholdInput").addEventListener("keyup", ((event)=>topUpThresholdInputHandler(event)))
-    document.getElementById("topUpTargetInput").addEventListener("keyup", ((event)=>topUpTargetInputHandler(event)))
+    document.getElementById("topUpTargetInput").addEventListener("keyup", (async (event)=>topUpTargetInputHandler(event)))
     
     // TODO should update underlyingTokenSymbol, underlyingTokenName, aaveTokenName,aaveTokenSymbol
-    document.getElementById("aaveTokenInput").addEventListener("keyup", ((event)=>aaveTokenInputHandler({event, provider})))
+    document.getElementById("aaveTokenInput").addEventListener("keyup", ((event)=>aaveTokenInputHandler({event, signer, provider})))
 
     // TODO also make a human readable price
     document.getElementById("maxBaseFeeInput").addEventListener("keyup", ((event)=>false))
     document.getElementById("minHealthFactorInput").addEventListener("keyup", ((event)=>false))
     document.getElementById("createUppie").addEventListener("click", (event)=>createUppieHandler({event, uppiesContract}))
+    document.getElementById("aaveTokenPermissionBtn").addEventListener("click", async (event)=>setAllowance({event, uppiesContract, signer,allowLowering:true}))
+
+    
 
 }
 

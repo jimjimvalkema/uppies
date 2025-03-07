@@ -32,7 +32,7 @@ contract Uppies {
     event CreateUppie(address payee, uint256 _uppiesIndex);
     event RemoveUppie(address payee, uint256 _uppiesIndex);
     event FillUppie(address payee, uint256 _uppiesIndex);
-    uint256 constant topUpGas = 373000;
+    uint256 constant topUpGas = 340000;
 
     address aavePoolInstance;
     address aaveOracle;
@@ -96,7 +96,6 @@ contract Uppies {
         require(recipientBalance < uppie.topUpThreshold, "user balance not below topup threshold");
         require(block.basefee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
 
-        // TODO if topUpSize > aaveAccountBalance. send entire balance instead
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
         uint256 txFee = block.basefee * topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
         uint256 totalWithdraw = topUpSize + txFee;
@@ -114,7 +113,7 @@ contract Uppies {
             address(this)
         );
 
-        // health factor check just incase user used the token as collateral.
+        // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
         // needs to be after the withdraw so we can see if it went bad.
         (, , , , , uint256 currentHealthFactor) = ILendingPool(aavePoolInstance).getUserAccountData(payee);
         require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");

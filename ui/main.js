@@ -6,7 +6,7 @@ import erc20Abi from "./erc20ABI.json"
 import ATokenABI from "./ATokenABI.json"
 
 const contractAbi = uppiesDeployment.abi
-const CONTRACT_ADDRESS = "0x88c96330C65b7C4697285BA6Cd1F1ED1bA60faDD"
+const CONTRACT_ADDRESS = "0xc3676b96ff4396d98b5c588302b1e2ad7b9e1458"
 const CHAININFO = {
     chainId: "0x64",
     rpcUrls: ["https://rpc.gnosischain.com"],

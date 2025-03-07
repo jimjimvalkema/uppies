@@ -70,20 +70,45 @@ async function fillUppie({uppie, uppiesContract}) {
         console.log(error) 
     }
 }
-
+/** ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
+ * @typedef  {{
+ *      recipientAccount: ethers.AddressLike, 
+ *      aaveToken:ethers.AddressLike, 
+ *      underlyingToken:ethers.AddressLike,
+ *      topUpThreshold: BigInt,
+ *      topUpTarget: BigInt,
+ *      maxBaseFee: BigInt,
+ *      minHealthFactor: BigInt,
+ *      payeeAddress: ethers.AddressLike,
+ *      uppiesIndex: BigInt
+ * }} Uppie
+ * @param {{uppie:Uppie, uppiesContract:ethers.Contract}} param0 
+ * @returns 
+ */
 async function isFillableUppie({uppie, uppiesContract}) {
     try {
         const provider = uppiesContract.runner.provider
         const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20ABI,provider)
+        const aaveTokenContract = new ethers.Contract(uppie.aaveToken, erc20ABI,provider)
         const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipientAccount)
+        const payeeBalance = await aaveTokenContract.balanceOf(uppie.recipientAccount)
+       
         // TODO healthfactor and basefee
-        // check approval
-        if (recipientBalance < BigInt(uppie.topUpThreshold)) {
+        const approval =  await aaveTokenContract.allowance(uppie.payeeAddress, uppiesContract.target)
+        const topUpSize = BigInt(uppie.topUpTarget) - recipientBalance
+
+        const isBelowThreshold = recipientBalance < BigInt(uppie.topUpThreshold)
+        const payeeHasBalance = Boolean(payeeBalance)
+        const enoughAllowance = topUpSize < approval
+        
+        console.log({payeeAddress:uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex},{isBelowThreshold, payeeHasBalance, enoughAllowance})
+        if (isBelowThreshold && payeeHasBalance && enoughAllowance) {
             return true
+        } else {
+            return false
         }
         
     } catch (error) {
-        console.log(erc20ABI)
         return false
         
     }

@@ -32,10 +32,11 @@ contract Uppies {
     event CreateUppie(address payee, uint256 _uppiesIndex);
     event RemoveUppie(address payee, uint256 _uppiesIndex);
     event FillUppie(address payee, uint256 _uppiesIndex);
-    uint256 constant topUpGas = 390000;
+    uint256 constant public topUpGas = 390000;
+    uint256 constant public priorityFee = 1000000000; // 1 gwei
 
-    address aavePoolInstance;
-    address aaveOracle;
+    address public aavePoolInstance;
+    address public aaveOracle;
     constructor(address _aavePoolInstance, address _aaveOracle) {
         aavePoolInstance = _aavePoolInstance;
         aaveOracle = _aaveOracle;
@@ -97,7 +98,8 @@ contract Uppies {
         require(block.basefee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
 
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
-        uint256 txFee = block.basefee * topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
+        uint256 txFee = ((priorityFee + block.basefee) * topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken)) / 100000000;
+        // divided by 100000000. because getAssetPrice returns a integer that is 10^8 too large since solidity cant do floats
         uint256 totalWithdraw = topUpSize + txFee;
         
         // not enough money? just send what you got

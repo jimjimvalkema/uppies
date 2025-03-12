@@ -32,7 +32,7 @@ contract Uppies {
     event CreateUppie(address payee, uint256 _uppiesIndex);
     event RemoveUppie(address payee, uint256 _uppiesIndex);
     event FillUppie(address payee, uint256 _uppiesIndex);
-    uint256 constant topUpGas = 380000;
+    uint256 constant topUpGas = 390000;
 
     address aavePoolInstance;
     address aaveOracle;

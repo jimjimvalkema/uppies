@@ -63,7 +63,7 @@ async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,endBloc
 async function fillUppie({uppie, uppiesContract}) {
     try {
         console.log("filling: ",{index: uppie.uppiesIndex, payee: uppie.payeeAddress})
-        const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress, {gasLimit:7000000}) // should be 373000 to is safer
+        const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress)//, {gasLimit:7000000}) // should be 373000 to is safer
         console.log((await tx.wait(1)).hash) //slow but prevents from dubbel txs 
         
     } catch (error) {
@@ -125,7 +125,7 @@ const parser = new ArgumentParser({
 });
 parser.add_argument('-pv', '--privateKey', {default: "0x00000000000000000000000000000000", help: 'privatekey for the account that fills the uppies', required: true });
 parser.add_argument('-p', '--provider', {default: "https://rpc.gnosischain.com", help: 'Provider url. Default uis mainnet. ex: mainnet: --provider=https://rpc.gnosischain.com or testnet: --provider=https://rpc.chiadochain.net', required: false });
-parser.add_argument('-c', '--contractAddress', {default: "0xc3676b96ff4396d98b5c588302b1e2ad7b9e1458", help: 'contract address of the uppies contract', required: false });
+parser.add_argument('-c', '--contractAddress', {default: "0xB64870b3508854c963dfCD16aA844151A38E03D5.", help: 'contract address of the uppies contract', required: false });
 
 const args = parser.parse_args()
 

@@ -6,7 +6,7 @@ import erc20Abi from "./erc20ABI.json"
 import ATokenABI from "./ATokenABI.json"
 
 const contractAbi = uppiesDeployment.abi
-const CONTRACT_ADDRESS = "0xc3676b96ff4396d98b5c588302b1e2ad7b9e1458"
+const CONTRACT_ADDRESS = "0xB64870b3508854c963dfCD16aA844151A38E03D5"
 const CHAININFO = {
     chainId: "0x64",
     rpcUrls: ["https://rpc.gnosischain.com"],
@@ -97,6 +97,7 @@ async function listAllUppies({address, uppiesContract}) {
     }
     
 }
+window.listAllUppies= listAllUppies
 
 
 function showAdvancedBtnHandler() {
@@ -117,6 +118,8 @@ function topUpThresholdInputHandler(event) {
         setClassWithEvent("topUpTarget",event) 
     }
     setClassWithEvent("topUpThreshold",event)
+
+    document.getElementById("aaveTokenPermissionInput").value = (Number(topUpTargetEl.value)*20).toString()
 }
 
 async function topUpTargetInputHandler(event, provider) {

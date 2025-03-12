@@ -1,21 +1,45 @@
 <!DOCTYPE html>
-<head>
-  <style>
-    body {
-        max-width: max(60%,600px);
-        margin-inline: auto;
-    }
 
-    .uppieDescription {
-        font-size: larger;
-        font-style:oblique;
-    }
-  </style>
+<head>
+    <style>
+        body {
+            filter: invert(100%);
+            background-color: rgba(0, 0, 0, 0.955);
+            min-width: 300px;
+            max-width: fit-content;
+            margin-inline: auto;
+            min-height: 95vh;
+        }
+
+        .title {
+            text-align: center;
+        }
+
+        .cursive {
+            font-style: italic;
+            font-size: small;
+        }
+
+        .footer {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+        }
+
+
+    </style>
 </head>
+
 <body>
+    <div class="title">
+        <h1>Uppies</h1>
+        <p class="cursive">automatic top-ups for your gnosis-pay card using aave! </p>
+    </div>
     <div id="createNewUppie">
         <h2>Create new uppie</h2>
-        <script  crossorigin type="module" src="./main.js"></script>
+        <script crossorigin type="module" src="./main.js"></script>
         <!-- recipientAccount   address :  0xdC237054074a32A50d284340D8f8E5A3C9274A16
         aaveToken   address :  0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2
         topUpThreshold   uint256 :  200000000000000000000
@@ -28,15 +52,18 @@
             <br>
 
             <label for="topUpTargetInput">target balance:</label>
-            <input type="number" id="topUpTargetInput" name="topUpTarget"><span class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
+            <input type="number" id="topUpTargetInput" name="topUpTarget"><span
+                class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
             <br>
 
             <label for="topUpThresholdInput">threshold:</label>
-            <input type="number" id="topUpThresholdInput" name="topUpThreshold"><span class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
+            <input type="number" id="topUpThresholdInput" name="topUpThreshold"><span
+                class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
             <br>
 
             <label for="underlyingTokenInput">Token to withdraw:</label>
-            <input type="text" id="underlyingTokenInput" name="underlyingToken" value="0xcB444e90D8198415266c6a2724b7900fb12FC56E" readonly disabled="disabled">
+            <input type="text" id="underlyingTokenInput" name="underlyingToken"
+                value="0xcB444e90D8198415266c6a2724b7900fb12FC56E" readonly disabled="disabled">
             <span class="underlyingTokenName">UNDERLYINGTOKENNAME</span>
             <br>
 
@@ -46,17 +73,19 @@
 
             <div id="advancedOptions" hidden>
                 <label for="aaveTokenInput">aaveToken:</label>
-                <input type="text" id="aaveTokenInput" name="aaveToken" value="0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2">
+                <input type="text" id="aaveTokenInput" name="aaveToken"
+                    value="0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2">
                 <span class="aaveTokenName">AAVESTOKENNAME</span>
                 <br>
-        
+
                 <label for="maxBaseFeeInput">maxBaseFee:</label>
                 <input type="number" id="maxBaseFeeInput" name="maxBaseFee" value="10">
                 <span>gwei</span>
                 <br>
-        
+
                 <label for="minHealthFactorInput">minHealthFactor:</label>
-                <input type="number" id="minHealthFactorInput" name="minHealthFactor"  placeholder="if unsure, leave empty">
+                <input type="number" id="minHealthFactorInput" name="minHealthFactor"
+                    placeholder="if unsure, leave empty">
                 <br>
 
                 <label for="uppieIndex">uppieIndex:</label>
@@ -65,16 +94,18 @@
 
 
                 <label for="aaveTokenPermissionInput">aave token permission:</label>
-                <input type="number" id="aaveTokenPermissionInput" name="aaveTokenPermission"><button type="button" id="aaveTokenPermissionBtn">set</button>
+                <input type="number" id="aaveTokenPermissionInput" name="aaveTokenPermission"><button type="button"
+                    id="aaveTokenPermissionBtn">set</button>
                 <br>
-                
-                <span>current allowance:<span id="currentAllowance"></span><span class="aaveTokenSymbol">AAVESTOKENSYMBOL</span></span>
+
+                <span>current allowance:<span id="currentAllowance"></span><span
+                        class="aaveTokenSymbol">AAVESTOKENSYMBOL</span></span>
             </div>
 
-        
+
         </form>
         <button id="showAdvancedBtn">show advanced options</button>
-        
+
         <br>
 
         <button id="createUppie">create uppie</button>
@@ -82,15 +113,25 @@
         <br>
 
         <a id="txlink">
-            
+
         </a>
     </div>
-    <div id="existingUppies" hidden >
-        <h2 >all your uppies!!! </h1>
-        <ul id="existingUppiesUl">
+    <div id="existingUppies" hidden>
+        <h2>all your uppies!!! </h1>
+            <ul id="existingUppiesUl">
 
-        </ul>
+            </ul>
 
     </div>
+
+    <footer class="footer">
+        <p>Github: <a href="https://github.com/jimjimvalkema/uppies">https://github.com/jimjimvalkema/uppies</a>
+            <br>
+            Twitter: <a href>https://x.com/jimjim_eth</a>
+            <br>
+            Donate :D (jimjim.eth): <a
+                href="https://etherscan.io/address/0x23bc95F84BD43C1FCc2bc285fDa4Cb12f9AEE2df">0x23bc95F84BD43C1FCc2bc285fDa4Cb12f9AEE2df</a>
+
+    </footer>
 
 </body>

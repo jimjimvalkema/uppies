@@ -98,7 +98,12 @@ contract Uppies {
         require(block.basefee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
 
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
-        uint256 txFee = ((priorityFee + block.basefee) * topUpGas * IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken)) / 100000000;
+        // 10**(8+8) / getAssetPrice 
+        // because getAssetPrice returns the eur/usd price. But we need usd/eur. 
+        // divide by the large number: 10000000000000000 (10**(8+8)). Because the price is returned 10^8 too large 
+        uint256 usdEurPrice = 10000000000000000 / IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
+        uint256 xdaiPaid = (priorityFee + block.basefee) *  topUpGas;
+        uint256 txFee = (xdaiPaid * usdEurPrice)  / 100000000;
         // divided by 100000000. because getAssetPrice returns a integer that is 10^8 too large since solidity cant do floats
         uint256 totalWithdraw = topUpSize + txFee;
         

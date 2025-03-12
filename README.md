@@ -5,8 +5,8 @@ forge create --broadcast --private-key 0xPRIVATEKEY --rpc-url https://rpc.gnosis
 ```
 
 live: https://uppies.eth.limo/    
-deployment: https://gnosisscan.io/address/0xB7FF930F6A33ACFfD1ab3CBa0B11bfF2b7333a52 
-ipfs: https://bafybeiftgkekvuwfegwm7moksdoojazh3kqn32a77f2stzrfnidztbymw4.ipfs.dweb.link/
+deployment: https://gnosisscan.io/address/0x5a56F25EAB8EB55F942a4894BAb68f6C06c00622  
+ipfs: https://bafybeielcchd3tzsk35kwixukqsgzddneoe6pyji4larfohkkmstplince.ipfs.dweb.link/
 
 ```shell
 node uppiesFiller/uppiesFiller.js --privateKey 0xPRIVATEKEY

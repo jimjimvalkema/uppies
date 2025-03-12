@@ -63,7 +63,7 @@ async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,endBloc
 async function fillUppie({uppie, uppiesContract}) {
     try {
         console.log("filling: ",{index: uppie.uppiesIndex, payee: uppie.payeeAddress})
-        const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress)//, {gasLimit:7000000}) // should be 373000 to is safer
+        const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress, {gasLimit:390000}) // should be 373000 to is safer
         console.log((await tx.wait(1)).hash) //slow but prevents from dubbel txs 
         
     } catch (error) {

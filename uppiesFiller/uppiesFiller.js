@@ -101,7 +101,7 @@ async function isFillableUppie({uppie, uppiesContract}) {
         const payeeHasBalance = Boolean(payeeBalance)
         const enoughAllowance = topUpSize < approval
         
-        console.log({payeeAddress:uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex},{isBelowThreshold, payeeHasBalance, enoughAllowance})
+        console.log({payeeAddress:uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex},{isBelowThreshold, payeeHasBalance, enoughAllowance,topUpTarget: uppie.topUpTarget, topUpThreshold: uppie.topUpThreshold })
         if (isBelowThreshold && payeeHasBalance && enoughAllowance) {
             return true
         } else {
@@ -150,7 +150,7 @@ while (true) {
     try {
         lastSyncedUppieBlock = await provider.getBlockNumber("latest")
         uppiesPerPayee = await syncUppies({preSyncedUppies:uppiesPerPayee,startBlock: startBlock,endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
-        console.log({uppies: uppiesPerPayee})
+        console.log({payees: Object.keys(uppiesPerPayee)})
         for (const payee in uppiesPerPayee) {
             for (const uppie of uppiesPerPayee[payee]) {
                 if (await isFillableUppie({uppie, uppiesContract})) {

@@ -34,10 +34,17 @@ window.getUppie = getUppie
 
 async function getAllUppies({address, uppiesContract}) {
     const uppiesFound = []
+    const allowedEmptyUppiesAttempts = 10; //## TODO make a better work around for the issue: removing a uppie from ui with a lower index than the rest will make ui think the higher indexes dont exist. Uppie filler doenst have this issue since it only relies on event scanning
+    const emptyUppies = 0
     let index = 0
     while(true) {
         const currentUppie = await getUppie({address, index, uppiesContract})
-        if (currentUppie.aaveToken === "0x0000000000000000000000000000000000000000") {break}
+        if (currentUppie.aaveToken === "0x0000000000000000000000000000000000000000") {
+            emptyUppies += 1 
+            if (emptyUppies > allowedEmptyUppiesAttempts ) {
+                break
+            }
+        }
         uppiesFound.push(currentUppie)
         index ++
     } 

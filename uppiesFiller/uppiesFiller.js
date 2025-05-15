@@ -22,6 +22,7 @@ async function queryEventInChunks({chunksize=20000,filter,startBlock, endBlock,c
 
 
 async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,endBlock,uppiesContract}) {    
+    // TODO get from abi instead
     const structNames = ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
 
     const createFilter = uppiesContract.filters.CreateUppie()
@@ -34,12 +35,14 @@ async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,endBloc
     // make object with know uppies {"payee":[uppieIndexs]}
     const newUppies = createEvents.map((event)=> [event.args[0], event.args[1]]);
     const removedUppies = removeEvents.map((event)=> [event.args[0], event.args[1]]);
+    console.log({removedUppies })
     // preSyncedUppies = {"0x0":[uppie,uppie],"0x1":[uppie,uppie,uppie]}
     // preSyncedUppiesArr = [["0x0",0],["0x0",1],["0x1",0],["0x1",1],["0x1",2]]
     const preSyncedUppiesArr = Object.keys(preSyncedUppies).map((key)=>preSyncedUppies[key].map((uppie)=> [key, uppie.uppiesIndex])).flat()
     const allUppiesArr = [...preSyncedUppiesArr, ...newUppies]
     for (const removedUppie of removedUppies) {
-        const removeIndex = allUppiesArr.findIndex((uppie)=>uppie.address === removedUppie.address &&  uppie.index === removedUppie.index)
+
+        const removeIndex = allUppiesArr.findIndex((uppie)=>uppie.address === removedUppie[0] &&  uppie.index === removedUppie[1])
         allUppiesArr.splice(removeIndex,1)
     }
 
@@ -100,8 +103,9 @@ async function isFillableUppie({uppie, uppiesContract}) {
         const isBelowThreshold = recipientBalance < BigInt(uppie.topUpThreshold)
         const payeeHasBalance = Boolean(payeeBalance)
         const enoughAllowance = topUpSize < approval
-        
-        console.log({payeeAddress:uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex},{isBelowThreshold, payeeHasBalance, enoughAllowance,topUpTarget: uppie.topUpTarget, topUpThreshold: uppie.topUpThreshold })
+        console.log(`\n-----checking uppie-----`)
+        console.log({recipientAddress:uppie.recipientAccount,payeeAddress:uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex},{isBelowThreshold, payeeHasBalance, enoughAllowance}, {uppie})
+        console.log(`\n----------------\n`)
         if (isBelowThreshold && payeeHasBalance && enoughAllowance) {
             return true
         } else {
@@ -133,7 +137,7 @@ const provider = new ethers.JsonRpcProvider(args.provider);
 const wallet = new ethers.Wallet(args.privateKey, provider);
 
 const uppiesContract = new ethers.Contract(args.contractAddress,uppiesDeployment.abi,wallet)
-let lastSyncedUppieBlock = await provider.getBlockNumber("latest")
+let lastSyncedUppieBlock = await provider.getBlockNumber()
 let startBlock = deploymentBlock
 let uppiesPerPayee = await syncUppies({preSyncedUppies:{},startBlock: deploymentBlock, endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
 
@@ -148,11 +152,12 @@ while (true) {
     // check payee balance > 0.01$
     // TODO check health ratio with simulation
     try {
-        lastSyncedUppieBlock = await provider.getBlockNumber("latest")
+        lastSyncedUppieBlock = await provider.getBlockNumber()
         uppiesPerPayee = await syncUppies({preSyncedUppies:uppiesPerPayee,startBlock: startBlock,endBlock: lastSyncedUppieBlock, uppiesContract: uppiesContract})
         console.log({payees: Object.keys(uppiesPerPayee)})
         for (const payee in uppiesPerPayee) {
             for (const uppie of uppiesPerPayee[payee]) {
+                //isFillableUppie(2131);
                 if (await isFillableUppie({uppie, uppiesContract})) {
                     try {
                         await fillUppie({uppie,uppiesContract})

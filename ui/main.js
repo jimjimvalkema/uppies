@@ -20,10 +20,11 @@ const CHAININFO = {
   }
 
 async function getUppie({address, index, uppiesContract}) {
-    const structNames = ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
+    // TODO get from abi instead
+    const uppieStructNames = ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor", "priorityFee", "topUpGas"]
     const uppieArr = await uppiesContract.uppiesPerUser(address, index)
     // map names to array items
-    const uppie = Object.fromEntries(uppieArr.map((item, index)=>[structNames[index], item]))   
+    const uppie = Object.fromEntries(uppieArr.map((item, index)=>[uppieStructNames[index], item]))   
     uppie.payee = address
     uppie.index = index
 
@@ -31,24 +32,18 @@ async function getUppie({address, index, uppiesContract}) {
 }
 window.getUppie = getUppie
 
-
+/**
+ * 
+ * @param {{address:ethers.BytesLike, uppiesContract:ethers.Contract}} param0 
+ * @returns 
+ */
 async function getAllUppies({address, uppiesContract}) {
-    const uppiesFound = []
-    const allowedEmptyUppiesAttempts = 10; //## TODO make a better work around for the issue: removing a uppie from ui with a lower index than the rest will make ui think the higher indexes dont exist. Uppie filler doenst have this issue since it only relies on event scanning
-    const emptyUppies = 0
-    let index = 0
-    while(true) {
-        const currentUppie = await getUppie({address, index, uppiesContract})
-        if (currentUppie.aaveToken === "0x0000000000000000000000000000000000000000") {
-            emptyUppies += 1 
-            if (emptyUppies > allowedEmptyUppiesAttempts ) {
-                break
-            }
-        }
-        uppiesFound.push(currentUppie)
-        index ++
-    } 
-    return uppiesFound
+    const highestUppieIndex = await uppiesContract.highestUppieIndexPerUser(address)
+    // TODO will break on high amounts if rpc is weak
+    const allUppiesPromise = new Array(highestUppieIndex).fill(0).map((v,index)=>getUppie({address, index, uppiesContract}))
+    const allUppies = await Promise.all(allUppiesPromise)
+    const filteredUppies = allUppies.filter((v,i)=> v["aaveToken"] !== "0x0000000000000000000000000000000000000000")
+    return filteredUppies
     
 }    
 window.getAllUppies = getAllUppies
@@ -89,6 +84,7 @@ async function listAllUppies({address, uppiesContract}) {
     for (const [index,uppie] of Object.entries(allUppies)) {
         const uppieLi = document.createElement("li")
         const underlyingToken = await getTokenInfo({address: uppie.underlyingToken,provider:provider})
+        // TODO edit button
         uppieLi.innerText = `
         recipient: ${uppie.recipientAccount} 
         threshold: ${ethers.formatUnits(uppie.topUpThreshold, underlyingToken.decimals)} ${underlyingToken.symbol}

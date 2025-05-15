@@ -32,8 +32,8 @@ contract Uppies {
     event CreateUppie(address payee, uint256 _uppiesIndex);
     event RemoveUppie(address payee, uint256 _uppiesIndex);
     event FillUppie(address payee, uint256 _uppiesIndex);
-    uint256 constant public topUpGas = 390000;
-    uint256 constant public priorityFee = 1000000000; // 1 gwei
+    // uint256 constant public topUpGas = 390000; // TODO allow user to specify into their uppie
+    // uint256 constant public priorityFee = 1000000000; // TODO allow user to specify into their uppie
 
     address public aavePoolInstance;
     address public aaveOracle;
@@ -46,24 +46,29 @@ contract Uppies {
         address recipient;
         address aaveToken;
         address underlyingToken;
-        uint256 topUpThreshold; // when to Uppies
-        uint256 topUpTarget; // a little bit extra to prevent topping up on every tx
-        uint256 maxBaseFee;
+        uint256 topUpThreshold; // when to Uppie
+        uint256 topUpTarget;    // can be a higher number than topUpThreshold so you don't have to top-up every tx
+        uint256 maxBaseFee; 
         uint256 minHealthFactor;
+        uint256 priorityFee;
+        uint256 topUpGas;
     }
 
-    // more gas efficient maxing would be offchain sigs or onchain as calldata
-    //TODO check if mapping(address => Uppie[]) is cheaper
-    mapping(address => mapping ( uint256 => Uppie)) public uppiesPerUser;
 
+    // more gas efficient maxing would be off-chain sigs 
+    mapping(address => mapping(uint256 => Uppie)) public uppiesPerUser;
+    mapping(address => uint256) public highestUppieIndexPerUser;        // to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
+
+    // TODO make edit uppie
     function createUppie(
         address _recipientAccount,
         address _aaveToken,
         uint256 _topUpThreshold,
         uint256 _topUpTarget,
-        uint256 _uppiesIndex,
         uint256 _maxBaseFee,
-        uint256 _minHealthFactor
+        uint256 _minHealthFactor,
+        uint256 _priorityFee,
+        uint256 _topUpGas
     ) public {
         require(_minHealthFactor > 1050000000000000000,"cant allow a _minHealthFactor below 1.05");
         // set permissions of _aaveToken in ui
@@ -75,18 +80,30 @@ contract Uppies {
             _topUpThreshold,
             _topUpTarget,
             _maxBaseFee,
-            _minHealthFactor
+            _minHealthFactor,
+            _priorityFee,
+            _topUpGas
         );
-        // TODO one token per eoa which is a silly restriction but i dont care
+
+        uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
+        uint256 _uppiesIndex = _highestUppieIndex + 1;
         uppiesPerUser[msg.sender][_uppiesIndex] = uppie;
+        if (_uppiesIndex > _highestUppieIndex) {
+            highestUppieIndexPerUser[msg.sender] = _uppiesIndex;
+        }
         emit CreateUppie(msg.sender, _uppiesIndex);
     }
 
     function removeUppie(uint256 _uppiesIndex) public {
-        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),0,0,0,0);
-        emit CreateUppie(msg.sender, _uppiesIndex);
+        uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
+        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),0,0,0,0,0,0);
+        if (_uppiesIndex == _highestUppieIndex) {
+            highestUppieIndexPerUser[msg.sender] = _uppiesIndex - 1;
+        }
+        emit RemoveUppie(msg.sender, _uppiesIndex);
     }
 
+    // TODO add option for relayer to sponsor
     function fillUppie(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
@@ -94,15 +111,17 @@ contract Uppies {
         uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
         
         require(payeeBalance != 0, "payee is broke");
-        require(recipientBalance < uppie.topUpThreshold, "user balance not below topup threshold");
+        require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
         require(block.basefee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
 
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
         // 10**(8+8) / getAssetPrice 
         // because getAssetPrice returns the eur/usd price. But we need usd/eur. 
-        // divide by the large number: 10000000000000000 (10**(8+8)). Because the price is returned 10^8 too large 
+        // divide by the large number: 10000000000000000 (10**(8+8)). Because the price is returned 10^8 too large
+
+        // TODO rename to token agnostic naming () 
         uint256 usdEurPrice = 10000000000000000 / IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
-        uint256 xdaiPaid = (priorityFee + block.basefee) *  topUpGas;
+        uint256 xdaiPaid = (uppie.priorityFee + block.basefee) * uppie.topUpGas;
         uint256 txFee = (xdaiPaid * usdEurPrice)  / 100000000;
         // divided by 100000000. because getAssetPrice returns a integer that is 10^8 too large since solidity cant do floats
         uint256 totalWithdraw = topUpSize + txFee;

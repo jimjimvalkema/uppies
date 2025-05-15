@@ -1,0 +1,199 @@
+[
+    {
+        "type": "constructor",
+        "inputs": [
+            {
+                "name": "_aavePoolInstance",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_aaveOracle",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "aaveOracle",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "aavePoolInstance",
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "function",
+        "name": "createUppie",
+        "inputs": [
+            {
+                "name": "_recipientAccount",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_aaveToken",
+                "type": "address",
+                "internalType": "address"
+            },
+            {
+                "name": "_topUpThreshold",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_topUpTarget",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_maxBaseFee",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_minHealthFactor",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_priorityFee",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "_topUpGas",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "fillUppie",
+        "inputs": [
+            {
+                "name": "_uppiesIndex",
+                "type": "uint256",
+                "internalType": "uint256"
+            },
+            {
+                "name": "payee",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "removeUppie",
+        "inputs": [
+            {
+                "name": "_uppiesIndex",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "outputs": [],
+        "stateMutability": "nonpayable"
+    },
+    {
+        "type": "function",
+        "name": "uppiesPerUser",
+        "inputs": [
+            {
+                "name": "",
+                "type": "address",
+                "internalType": "address"
+            }
+        ],
+        "outputs": [
+            {
+                "name": "highestUppieIndex",
+                "type": "uint256",
+                "internalType": "uint256"
+            }
+        ],
+        "stateMutability": "view"
+    },
+    {
+        "type": "event",
+        "name": "CreateUppie",
+        "inputs": [
+            {
+                "name": "payee",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "_uppiesIndex",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "FillUppie",
+        "inputs": [
+            {
+                "name": "payee",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "_uppiesIndex",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    },
+    {
+        "type": "event",
+        "name": "RemoveUppie",
+        "inputs": [
+            {
+                "name": "payee",
+                "type": "address",
+                "indexed": false,
+                "internalType": "address"
+            },
+            {
+                "name": "_uppiesIndex",
+                "type": "uint256",
+                "indexed": false,
+                "internalType": "uint256"
+            }
+        ],
+        "anonymous": false
+    }
+]

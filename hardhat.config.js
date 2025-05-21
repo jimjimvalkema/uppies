@@ -93,7 +93,30 @@ const config = {
       url: configVariable("SEPOLIA_RPC_URL"),
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
+    gnosis: {
+      type: "http",
+      chainType: "l1",
+      url: configVariable("GNOSIS_RPC_URL"),
+      accounts: [configVariable("GNOSIS_PRIVATE_KEY")],
+    },
+    hardhat: {
+      forking: {
+        url: configVariable("GNOSIS_RPC_URL"),
+        blockNumber: 40141398
+      }
+    }
   },
 };
 
+
+// const config = {
+//   networks: {
+//     hardhat: {
+//       forking: {
+//         url: configVariable("GNOSIS_RPC_URL"),
+//         blockNumber: 40141398
+//       }
+//     }
+//   }
+// }
 export default config;

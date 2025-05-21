@@ -38,7 +38,7 @@ contract Uppies {
     // more gas efficient maxing would be off-chain sigs 
     mapping(address => mapping(uint256 => Uppie)) public uppiesPerUser;
     // to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
-    mapping(address => uint256) public highestUppieIndexPerUser;       
+    mapping(address => uint256) public nextUppieIndexPerUser;       
 
     function createUppie(
         address _recipientAccount,
@@ -66,15 +66,15 @@ contract Uppies {
             _fillerReward
         );
         
-        uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
-        uint256 _uppiesIndex = _highestUppieIndex + 1;
+        uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
+        uint256 _uppiesIndex = _nextUppieIndex + 1;
 
-        if (_uppiesIndex > _highestUppieIndex) {
-            highestUppieIndexPerUser[msg.sender] = _uppiesIndex;
+        if (_uppiesIndex > _nextUppieIndex) {
+            nextUppieIndexPerUser[msg.sender] = _uppiesIndex;
         }
 
-        uppiesPerUser[msg.sender][_uppiesIndex] = uppie;
-        emit NewUppie(msg.sender, _uppiesIndex);
+        uppiesPerUser[msg.sender][_nextUppieIndex] = uppie; 
+        emit NewUppie(msg.sender, _nextUppieIndex);
     }
 
     function editUppie(
@@ -91,7 +91,7 @@ contract Uppies {
 
         uint256 _uppiesIndex
     ) public {
-        require(highestUppieIndexPerUser[msg.sender] >= _uppiesIndex, "cant edit uppie that doesn't exist");
+        require(nextUppieIndexPerUser[msg.sender] > _uppiesIndex, "cant edit uppie that doesn't exist");
 
         address underlyingToken = IAToken(_aaveToken).UNDERLYING_ASSET_ADDRESS();
         Uppie memory uppie = Uppie(
@@ -113,10 +113,10 @@ contract Uppies {
 
 
     function removeUppie(uint256 _uppiesIndex) public {
-        uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
+        uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),0,0,0,0,0,0,0);
-        if (_uppiesIndex == _highestUppieIndex) {
-            highestUppieIndexPerUser[msg.sender] = _uppiesIndex - 1;
+        if (_uppiesIndex == _nextUppieIndex - 1) {
+            nextUppieIndexPerUser[msg.sender] = _uppiesIndex - 1;
         }
         emit RemovedUppie(msg.sender, _uppiesIndex);
     }

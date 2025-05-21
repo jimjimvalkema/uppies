@@ -32,8 +32,6 @@ contract Uppies {
     event NewUppie(address indexed payee, uint256 _uppiesIndex);
     event RemovedUppie(address indexed payee, uint256 _uppiesIndex);
     event FilledUppie(address indexed payee, uint256 _uppiesIndex);
-    // uint256 constant public topUpGas = 390000; // TODO allow user to specify into their uppie
-    // uint256 constant public priorityFee = 1000000000; // TODO allow user to specify into their uppie
 
     address public aavePoolInstance;
     address public aaveOracle;
@@ -61,7 +59,6 @@ contract Uppies {
     // to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
     mapping(address => uint256) public highestUppieIndexPerUser;       
 
-    // TODO make edit uppie
     function createUppie(
         address _recipientAccount,
         address _aaveToken,
@@ -74,9 +71,47 @@ contract Uppies {
         uint256 _topUpGas,
         uint256 _fillerReward
     ) public {
-        // TODO ui should do this. Also ui can set it to 0 if it cant be used as collateral 
-        //require(_minHealthFactor > 1050000000000000000,"cant allow a _minHealthFactor below 1.05");
-        // set permissions of _aaveToken in ui
+        address underlyingToken = IAToken(_aaveToken).UNDERLYING_ASSET_ADDRESS();
+        Uppie memory uppie = Uppie(
+            _recipientAccount,
+            _aaveToken,
+            underlyingToken,
+            _topUpThreshold,
+            _topUpTarget,
+            _minHealthFactor,
+            _maxBaseFee,
+            _priorityFee,       
+            _topUpGas,
+            _fillerReward
+        );
+        
+        uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
+        uint256 _uppiesIndex = _highestUppieIndex + 1;
+
+        if (_uppiesIndex > _highestUppieIndex) {
+            highestUppieIndexPerUser[msg.sender] = _uppiesIndex;
+        }
+
+        uppiesPerUser[msg.sender][_uppiesIndex] = uppie;
+        emit NewUppie(msg.sender, _uppiesIndex);
+    }
+
+    function editUppie(
+        address _recipientAccount,
+        address _aaveToken,
+        uint256 _topUpThreshold,
+        uint256 _topUpTarget,
+        uint256 _minHealthFactor,
+
+        uint256 _maxBaseFee,
+        uint256 _priorityFee,       
+        uint256 _topUpGas,
+        uint256 _fillerReward,
+
+        uint256 _uppiesIndex
+    ) public {
+        require(highestUppieIndexPerUser[msg.sender] >= _uppiesIndex, "cant edit uppie that doesn't exist");
+
         address underlyingToken = IAToken(_aaveToken).UNDERLYING_ASSET_ADDRESS();
         Uppie memory uppie = Uppie(
             _recipientAccount,
@@ -91,14 +126,10 @@ contract Uppies {
             _fillerReward
         );
 
-        uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
-        uint256 _uppiesIndex = _highestUppieIndex + 1;
         uppiesPerUser[msg.sender][_uppiesIndex] = uppie;
-        if (_uppiesIndex > _highestUppieIndex) {
-            highestUppieIndexPerUser[msg.sender] = _uppiesIndex;
-        }
         emit NewUppie(msg.sender, _uppiesIndex);
     }
+
 
     function removeUppie(uint256 _uppiesIndex) public {
         uint256 _highestUppieIndex = highestUppieIndexPerUser[msg.sender];
@@ -143,7 +174,6 @@ contract Uppies {
         emit FilledUppie(payee, _uppiesIndex);
     }
 
-    // TODO add option for relayer to sponsor
     function fillUppie(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
@@ -183,11 +213,6 @@ contract Uppies {
         uint256 blockBaseFee = block.basefee;
         require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
     
-        // 10**(8+8) / getAssetPrice 
-        // because getAssetPrice returns the eur/usd price. But we need usd/eur. 
-        // divide by the large number: 10000000000000000 (10**(8+8)). Because the price is returned 10^8 too large
-
-        // TODO consider tokens having different amount of decimals (might be fine?)
         uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
 
         // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large

@@ -2,7 +2,6 @@
   "target": "esnext",
   "module": "esnext",
   "dependencies": {
-    "@aave/protocol-v2": "^1.0.1",
     "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.0-next.8",
     "@nomicfoundation/hardhat-ignition-ethers": "^3.0.0-next.8",
     "@nomicfoundation/hardhat-keystore": "^3.0.0-next.8",
@@ -31,5 +30,6 @@
     "mocha": "^11.0.0",
     "typescript": "~5.5.0",
     "viem": "^2.21.42"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

@@ -1,28 +1,9 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-//forge cant compile this shit
-//import {IAToken} from 'node_modules/@aave/protocol-v2/contracts/interfaces/IAToken.sol';
-//import {ILendingPool} from 'node_modules/@aave/protocol-v2/contracts/interfaces/ILendingPool.sol';
-
-interface IAToken {
-    function UNDERLYING_ASSET_ADDRESS() external view returns (address);
-}
-
-interface ILendingPool {
-    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
-
-    function getUserAccountData(address user) external view
-    returns (
-        uint256 totalCollateralBase,
-        uint256 totalDebtBase,
-        uint256 availableBorrowsBase,
-        uint256 currentLiquidationThreshold,
-        uint256 ltv,
-        uint256 healthFactor
-    );
-}
+import {IAToken} from './interfaces/aave/IAToken.sol';
+import {IPool} from './interfaces/aave/IPool.sol';
 
 interface IAaveOracle {
     function getAssetPrice(address asset) external view returns (uint256);
@@ -158,7 +139,7 @@ contract Uppies {
         }
 
         IERC20(uppie.aaveToken).transferFrom(payee, address(this), topUpSize);
-        ILendingPool(aavePoolInstance).withdraw(
+        IPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
             topUpSize,
             address(this)
@@ -167,7 +148,7 @@ contract Uppies {
         // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
         // needs to be after the withdraw so we can see if it went bad.
         if (uppie.minHealthFactor > 0 ) {
-            (, , , , , uint256 currentHealthFactor) = ILendingPool(aavePoolInstance).getUserAccountData(payee);
+            (, , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
             require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");
         }
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
@@ -191,7 +172,7 @@ contract Uppies {
         (totalWithdraw, fillerFee) = _calculateFees(uppie ,topUpSize, payeeBalance);
 
         IERC20(uppie.aaveToken).transferFrom(payee, address(this), totalWithdraw);
-        ILendingPool(aavePoolInstance).withdraw(
+        IPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
             totalWithdraw,
             address(this)
@@ -200,7 +181,7 @@ contract Uppies {
         // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
         // needs to be after the withdraw so we can see if it went bad.
         if (uppie.minHealthFactor > 0 ) {
-            (, , , , , uint256 currentHealthFactor) = ILendingPool(aavePoolInstance).getUserAccountData(payee);
+            (, , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
             require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");
         }
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);

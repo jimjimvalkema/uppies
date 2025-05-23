@@ -1,7 +1,7 @@
 import { configVariable } from "hardhat/config";
 
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
-
+const GNOSIS_RPC_URL = "https://rpc.gnosischain.com"
 const config = {
   /*
    * In Hardhat 3, plugins are defined as part of the Hardhat config instead of
@@ -101,8 +101,8 @@ const config = {
     },
     hardhat: {
       forking: {
-        url: configVariable("GNOSIS_RPC_URL"),
-        blockNumber: 40141398
+        url: GNOSIS_RPC_URL,
+        // blockNumber: 40180496
       }
     }
   },

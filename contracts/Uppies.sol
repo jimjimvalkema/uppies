@@ -67,14 +67,10 @@ contract Uppies {
         );
         
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
-        uint256 _uppiesIndex = _nextUppieIndex + 1;
-
-        if (_uppiesIndex > _nextUppieIndex) {
-            nextUppieIndexPerUser[msg.sender] = _uppiesIndex;
-        }
 
         uppiesPerUser[msg.sender][_nextUppieIndex] = uppie; 
         emit NewUppie(msg.sender, _nextUppieIndex);
+        nextUppieIndexPerUser[msg.sender] = _nextUppieIndex + 1;
     }
 
     function editUppie(
@@ -114,9 +110,11 @@ contract Uppies {
 
     function removeUppie(uint256 _uppiesIndex) public {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
+        require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
+
         uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),0,0,0,0,0,0,0);
         if (_uppiesIndex == _nextUppieIndex - 1) {
-            nextUppieIndexPerUser[msg.sender] = _uppiesIndex - 1;
+            nextUppieIndexPerUser[msg.sender] = _nextUppieIndex - 1;
         }
         emit RemovedUppie(msg.sender, _uppiesIndex);
     }
@@ -163,7 +161,7 @@ contract Uppies {
         
         require(payeeBalance != 0, "payee is broke");
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-        require(uppie.maxBaseFee < block.basefee, "block.basefee is higher than uppie.maxBaseFee");
+        require(block.basefee < uppie.maxBaseFee , "block.basefee is higher than uppie.maxBaseFee");
         
         uint256 topUpSize = uppie.topUpTarget - recipientBalance;
         uint256 totalWithdraw;

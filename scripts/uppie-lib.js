@@ -35,8 +35,8 @@ export async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,
     // TODO get from abi instead
     const structNames = ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
 
-    const createFilter = uppiesContract.filters.CreateUppie()
-    const removeFilter = uppiesContract.filters.RemoveUppie()
+    const createFilter = uppiesContract.filters.NewUppie()
+    const removeFilter = uppiesContract.filters.RemovedUppie()
     const createEvents = await queryEventInChunks({chunksize,filter:createFilter,startBlock,endBlock,contract:uppiesContract})
     const removeEvents = await queryEventInChunks({chunksize,filter:removeFilter,startBlock,endBlock,contract:uppiesContract})
 
@@ -45,13 +45,11 @@ export async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,
     // make object with know uppies {"payee":[uppieIndexs]}
     const newUppies = createEvents.map((event)=> [event.args[0], event.args[1]]);
     const removedUppies = removeEvents.map((event)=> [event.args[0], event.args[1]]);
-    console.log({removedUppies })
     // preSyncedUppies = {"0x0":[uppie,uppie],"0x1":[uppie,uppie,uppie]}
     // preSyncedUppiesArr = [["0x0",0],["0x0",1],["0x1",0],["0x1",1],["0x1",2]]
     const preSyncedUppiesArr = Object.keys(preSyncedUppies).map((key)=>preSyncedUppies[key].map((uppie)=> [key, uppie.uppiesIndex])).flat()
     const allUppiesArr = [...preSyncedUppiesArr, ...newUppies]
     for (const removedUppie of removedUppies) {
-
         const removeIndex = allUppiesArr.findIndex((uppie)=>uppie.address === removedUppie[0] &&  uppie.index === removedUppie[1])
         allUppiesArr.splice(removeIndex,1)
     }
@@ -60,11 +58,11 @@ export async function syncUppies({preSyncedUppies={},chunksize=20000,startBlock,
     for (const uppies of allUppiesArr) {
         const address = uppies[0]
         const index = uppies[1]
-        const struct = Object.fromEntries((await uppiesContract.uppiesPerUser(address, index)).map((item, index)=>[structNames[index], item]))
+        const onchainUppieStruct = Object.fromEntries((await uppiesContract.uppiesPerUser(address, index)).map((item, index)=>[structNames[index], item]))
         if (!(address in syncedUppies)) {
             syncedUppies[address] = []
         }
-        syncedUppies[address][index] = {...struct, payeeAddress: address, uppiesIndex: index}
+        syncedUppies[address][index] = {...onchainUppieStruct, payeeAddress: address, uppiesIndex: index}
 
     }
     

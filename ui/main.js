@@ -236,7 +236,6 @@ async function createUppieHandler({event, uppiesContract}) {
 async function setAllowance({event, uppiesContract, signer, allowLowering=false}) {
     console.log({signer})
     const provider = uppiesContract.runner.provider
-    console.log("hiiiiiiiiiiii")
     const aaveTokenAddress = document.getElementById("aaveTokenInput").value
     const aaveTokenContract = new ethers.Contract(aaveTokenAddress,ATokenABI,signer)
     const decimals =  await aaveTokenContract.decimals()

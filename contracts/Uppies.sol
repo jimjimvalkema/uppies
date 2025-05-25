@@ -160,7 +160,7 @@ contract Uppies {
         uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
 
         require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
-        require((uppie.canBorrow == false) && (payeeBalance != 0), "payee balance empty");
+        require(payeeBalance != 0, "payee balance empty");
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
         
         uint256 oraclePrice = IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
@@ -183,16 +183,49 @@ contract Uppies {
         emit FilledUppie(payee, _uppiesIndex);
     }
 
-    function _calculateTotalWithdrawAndFees(Uppie memory uppie, uint256 payeeBalance, uint256 blockBaseFee, uint256 oraclePrice) pure private returns(uint256, uint256, uint256) {
+    function fillUppieWithBorrow(uint256 _uppiesIndex, address payee) public {
+        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
+
+        uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
+        uint256 blockBaseFee = block.basefee;
+        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
+
+        require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
+        require(payeeBalance == 0, "can't borrow if payee still has a balance");
+        require(uppie.canBorrow , "this uppie is not allowed to borrow");
+        require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
+        
+        uint256 oraclePrice = IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
+        (uint256 totalBorrow, uint256 fillerFee, uint256 topUpSize) = _calculateTotalBorrowAndFees(uppie, blockBaseFee, oraclePrice);
+
+        // borrow
+        IPool(aavePoolInstance).borrow(
+            uppie.underlyingToken,
+            totalBorrow,
+            2, // interestRateMode 1 is deprecated so we you can only use 2 which is variable
+            0, // referral code
+            payee
+        );
+
+        // check health factor
+        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor");
+        
+        // send it!
+        IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
+        IERC20(uppie.underlyingToken).transfer(msg.sender, fillerFee);
+        emit FilledUppie(payee, _uppiesIndex);
+    }
+
+    function _calculateTotalWithdrawAndFees(Uppie memory uppie, uint256 payeeBalance, uint256 blockBaseFee, uint256 oraclePrice) pure private returns(uint256 totalWithdraw, uint256 fillerFee, uint256 topUpSize) {
         // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large
         uint256 underlyingTokenPrice = 10000000000000000 / oraclePrice;
 
-        uint256 topUpSize = payeeBalance - uppie.topUpTarget;
+        topUpSize = payeeBalance - uppie.topUpTarget;
         uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
         uint256 txCost = (xdaiPaid * underlyingTokenPrice)  / 100000000;
         
-        uint256 fillerFee = txCost + uppie.fillerReward;
-        uint256 totalWithdraw = topUpSize + fillerFee;
+        fillerFee = txCost + uppie.fillerReward;
+        totalWithdraw = topUpSize + fillerFee;
 
         // not enough money? just send what you got
         if (payeeBalance < totalWithdraw) {
@@ -202,8 +235,30 @@ contract Uppies {
         return (totalWithdraw, fillerFee, topUpSize);
     }
 
-    function _calculateTopUpSize(Uppie memory uppie, uint256 payeeBalance) pure private returns(uint256) {
-        uint256 topUpSize = payeeBalance - uppie.topUpTarget;
+    function _calculateTotalBorrowAndFees(Uppie memory uppie, uint256 blockBaseFee, uint256 oraclePrice) pure private returns(uint256 totalBorrow, uint256 fillerFee, uint256 topUpSize) {
+        // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large
+        uint256 underlyingTokenPrice = 10000000000000000 / oraclePrice;
+
+        // TODO see if it is possible to calculate the max amount able to borrow before going to below uppie.minHealthFactor. It might not be possible?
+        //topUpSize = maxBorrow - uppie.topUpTarget;
+        topUpSize = uppie.topUpTarget;
+        uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
+        uint256 txCost = (xdaiPaid * underlyingTokenPrice)  / 100000000;
+        
+        fillerFee = txCost + uppie.fillerReward;
+        totalBorrow = topUpSize + fillerFee;
+
+        // \/ cant do this yet we need to calculate `maxBorrow` first but idk how yet
+        // not enough money? just send what you got
+        // if (payeeBalance < totalWithdraw) {
+        //     totalWithdraw = payeeBalance;
+        //     topUpSize = payeeBalance - fillerFee;
+        // }
+        return (totalBorrow, fillerFee, topUpSize);
+    }
+
+    function _calculateTopUpSize(Uppie memory uppie, uint256 payeeBalance) pure private returns(uint256 topUpSize) {
+        topUpSize = payeeBalance - uppie.topUpTarget;
         if (payeeBalance < topUpSize) {
             return payeeBalance;
         } else {
@@ -211,7 +266,7 @@ contract Uppies {
         }
     }
 
-    function _isSafeHealthFactor(uint256 minHealthFactor, address payee) view private returns(bool) {
+    function _isSafeHealthFactor(uint256 minHealthFactor, address payee) view private returns(bool isSafe) {
         // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
         // needs to be after the withdraw so we can see if it went bad.
         if ((minHealthFactor > 0)) {

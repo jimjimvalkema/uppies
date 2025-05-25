@@ -62,7 +62,7 @@ describe("Uppies", function () {
 
         // steal some eure from a whale
         const eureWhale = "0x056C6C5e684CeC248635eD86033378Cc444459B0" // i couldn't impersonate a minter so i used a curve pool contract
-        const eureWhaleWallet = await turnIntoFundedSigner(eureWhale, deployerWallet)
+        const eureWhaleWallet = await turnIntoFundedSigner(eureWhale, deployerWallet, provider)
 
         // deploy uppies
         const uppiesContructArgs = ["0xb50201558B00496A145fE76f7424749556E326D8", "0xeb0a051be10228213BAEb449db63719d6742F7c4"]
@@ -100,6 +100,7 @@ describe("Uppies", function () {
 
         const _recipientAccount = userRecipientWallet.address
         const _aaveTokenAddress = ATokenEureAddress // Aave Gnosis EURe
+        const _canBorrow = false
         const _topUpThreshold = 100n * 10n ** 18n         // 100 eure
         const _topUpTarget = 130n * 10n ** 18n         // 130 eure
         const _minHealthFactor = BigInt(1.1 * 10 ** 18)    // 1.1 healthFactor
@@ -112,6 +113,7 @@ describe("Uppies", function () {
         await (await uppiesContractUser.createUppie(
             _recipientAccount,
             _aaveTokenAddress,
+            _canBorrow,
             _topUpThreshold,
             _topUpTarget,
             _minHealthFactor,
@@ -132,7 +134,7 @@ describe("Uppies", function () {
     });
 
 
-    async function turnIntoFundedSigner(contractAddress, sponsor) {
+    async function turnIntoFundedSigner(contractAddress, sponsor, provider) {
         await provider.send(
             "hardhat_impersonateAccount",
             [contractAddress],

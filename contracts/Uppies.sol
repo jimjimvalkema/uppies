@@ -23,8 +23,9 @@ contract Uppies {
 
     struct Uppie {
         address recipient;
-        address aaveToken;
+        address aaveToken;    
         address underlyingToken;
+        bool canBorrow;    
         uint256 topUpThreshold; // when to Uppie
         uint256 topUpTarget;    // can be a higher number than topUpThreshold so you don't have to top-up every tx
         uint256 minHealthFactor;
@@ -43,6 +44,7 @@ contract Uppies {
     function createUppie(
         address _recipientAccount,
         address _aaveToken,
+        bool _canBorrow,
         uint256 _topUpThreshold,
         uint256 _topUpTarget,
         uint256 _minHealthFactor,
@@ -57,6 +59,7 @@ contract Uppies {
             _recipientAccount,
             _aaveToken,
             underlyingToken,
+            _canBorrow,
             _topUpThreshold,
             _topUpTarget,
             _minHealthFactor,
@@ -76,6 +79,7 @@ contract Uppies {
     function editUppie(
         address _recipientAccount,
         address _aaveToken,
+        bool _canBorrow,
         uint256 _topUpThreshold,
         uint256 _topUpTarget,
         uint256 _minHealthFactor,
@@ -94,6 +98,7 @@ contract Uppies {
             _recipientAccount,
             _aaveToken,
             underlyingToken,
+            _canBorrow,
             _topUpThreshold,
             _topUpTarget,
             _minHealthFactor,
@@ -112,7 +117,7 @@ contract Uppies {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
 
-        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),0,0,0,0,0,0,0);
+        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),false,0,0,0,0,0,0,0);
         if (_uppiesIndex == _nextUppieIndex - 1) {
             nextUppieIndexPerUser[msg.sender] = _nextUppieIndex - 1;
         }
@@ -123,19 +128,15 @@ contract Uppies {
     function sponsoredFillUppie(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
-        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
         uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
-        
-        require(payeeBalance != 0, "payee is broke");
+        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
+
+        require((uppie.canBorrow == false) && (payeeBalance != 0), "payee balance empty");
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-        require(uppie.maxBaseFee < block.basefee, "block.basefee is higher than uppie.maxBaseFee");
-        uint256 topUpSize = uppie.topUpTarget - recipientBalance;
+        
+        uint256 topUpSize = _calculateTopUpSize(uppie, payeeBalance);
 
-       // not enough money? just send what you got
-        if (payeeBalance < topUpSize) {
-            topUpSize = payeeBalance;
-        }
-
+        // withdraw
         IERC20(uppie.aaveToken).transferFrom(payee, address(this), topUpSize);
         IPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
@@ -143,12 +144,10 @@ contract Uppies {
             address(this)
         );
 
-        // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
-        // needs to be after the withdraw so we can see if it went bad.
-        if (uppie.minHealthFactor > 0 ) {
-            (, , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
-            require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");
-        }
+        // check health factor
+        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor");
+        
+        // send it!
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
         emit FilledUppie(payee, _uppiesIndex);
     }
@@ -156,19 +155,18 @@ contract Uppies {
     function fillUppie(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
-        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
         uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
-        
-        require(payeeBalance != 0, "payee is broke");
+        uint256 blockBaseFee = block.basefee;
+        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
+
+        require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
+        require((uppie.canBorrow == false) && (payeeBalance != 0), "payee balance empty");
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-        require(block.basefee < uppie.maxBaseFee , "block.basefee is higher than uppie.maxBaseFee");
         
-        uint256 topUpSize = uppie.topUpTarget - recipientBalance;
-        uint256 totalWithdraw;
-        uint256 fillerFee = 0;
+        uint256 oraclePrice = IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
+        (uint256 totalWithdraw, uint256 fillerFee, uint256 topUpSize) = _calculateTotalWithdrawAndFees(uppie, payeeBalance, blockBaseFee, oraclePrice);
 
-        (totalWithdraw, fillerFee) = _calculateFees(uppie ,topUpSize, payeeBalance);
-
+        // withdraw
         IERC20(uppie.aaveToken).transferFrom(payee, address(this), totalWithdraw);
         IPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
@@ -176,30 +174,24 @@ contract Uppies {
             address(this)
         );
 
-        // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
-        // needs to be after the withdraw so we can see if it went bad.
-        if (uppie.minHealthFactor > 0 ) {
-            (, , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
-            require(currentHealthFactor > uppie.minHealthFactor,"This uppie will causes to the user to go below the Uppie.minHealthFactor");
-        }
+        // check health factor
+        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor");
+        
+        // send it!
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
         IERC20(uppie.underlyingToken).transfer(msg.sender, fillerFee);
-
         emit FilledUppie(payee, _uppiesIndex);
     }
 
-    function _calculateFees(Uppie memory uppie , uint256 topUpSize, uint256 payeeBalance) view private returns(uint256, uint256) {
-        uint256 blockBaseFee = block.basefee;
-        require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
-    
-        uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
-
+    function _calculateTotalWithdrawAndFees(Uppie memory uppie, uint256 payeeBalance, uint256 blockBaseFee, uint256 oraclePrice) pure private returns(uint256, uint256, uint256) {
         // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large
-        uint256 underlyingTokenPrice = 10000000000000000 / IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken);
+        uint256 underlyingTokenPrice = 10000000000000000 / oraclePrice;
+
+        uint256 topUpSize = payeeBalance - uppie.topUpTarget;
+        uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
         uint256 txCost = (xdaiPaid * underlyingTokenPrice)  / 100000000;
-        uint256 fillerFee = uppie.fillerReward + txCost;
-        // divided by 100000000. because getAssetPrice returns a integer that is 10^8 too large since solidity cant do floats
         
+        uint256 fillerFee = txCost + uppie.fillerReward;
         uint256 totalWithdraw = topUpSize + fillerFee;
 
         // not enough money? just send what you got
@@ -207,6 +199,26 @@ contract Uppies {
             totalWithdraw = payeeBalance;
             topUpSize = payeeBalance - fillerFee;
         }
-        return (totalWithdraw, fillerFee);
+        return (totalWithdraw, fillerFee, topUpSize);
+    }
+
+    function _calculateTopUpSize(Uppie memory uppie, uint256 payeeBalance) pure private returns(uint256) {
+        uint256 topUpSize = payeeBalance - uppie.topUpTarget;
+        if (payeeBalance < topUpSize) {
+            return payeeBalance;
+        } else {
+            return topUpSize;
+        }
+    }
+
+    function _isSafeHealthFactor(uint256 minHealthFactor, address payee) view private returns(bool) {
+        // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
+        // needs to be after the withdraw so we can see if it went bad.
+        if ((minHealthFactor > 0)) {
+            (, , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
+            return currentHealthFactor > minHealthFactor;
+        } else {
+            return true;
+        }
     }
 }

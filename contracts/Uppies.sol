@@ -22,7 +22,7 @@ contract Uppies {
     }
 
     // you can gasGolf this by hashing all this and only storing the hash. Or even off-chain signatures. 
-    // But that mainly affects cost of creating an uppie, which is only doesn't happen a lott 
+    // But that mainly affects cost of creating an uppie, but the benefit would be small since creating uppies doesn't happen often 
     struct Uppie {
         address recipient;
         address aaveToken;    
@@ -94,7 +94,6 @@ contract Uppies {
         emit NewUppie(msg.sender, _uppiesIndex);
     }
 
-
     function removeUppie(uint256 _uppiesIndex) public {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
@@ -127,10 +126,44 @@ contract Uppies {
         );
 
         // check health factor
-        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor");
+        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
         
         // send it!
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
+        emit FilledUppie(payee, _uppiesIndex);
+    }
+
+    function sponsoredFillUppieWithBorrow(uint256 _uppiesIndex, address payee) public {
+        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
+
+        uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
+        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
+
+        require(payeeBalance == 0, "can't borrow if payee still has a balance");
+        require(uppie.canBorrow , "this uppie is not allowed to borrow");
+        require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
+           
+        uint256 totalBorrow = payeeBalance - uppie.topUpTarget;
+
+        // borrow
+        IPool(aavePoolInstance).borrow(
+            uppie.underlyingToken,
+            totalBorrow,
+            2, // interestRateMode 1 is deprecated so we you can only use 2 which is variable
+            0, // referral code
+            payee
+        );
+        // see what happened in aave
+        (,uint256 totalDebtBase , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
+        //check health
+        require(currentHealthFactor > uppie.minHealthFactor, "This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
+        //check debt
+        uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken));   
+        uint256 totalDebtDenominatedInUnderlyingToken = _convertWithAaveOraclePrice(totalDebtBase, underlyingTokenPrice);
+        require(totalDebtDenominatedInUnderlyingToken <= uppie.maxDebt, "total debt larger than uppie.maxDebt");
+
+        // send it!
+        IERC20(uppie.underlyingToken).transfer(uppie.recipient,totalBorrow);
         emit FilledUppie(payee, _uppiesIndex);
     }
 
@@ -157,7 +190,7 @@ contract Uppies {
         );
 
         // check health factor
-        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor");
+        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
         
         // send it!
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
@@ -191,7 +224,7 @@ contract Uppies {
         // see what happened in aave
         (,uint256 totalDebtBase , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
         //check health
-        require(currentHealthFactor > uppie.minHealthFactor, "This uppie will causes to the user to go below the Uppie.minHealthFactor");
+        require(currentHealthFactor > uppie.minHealthFactor, "This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
         //check debt
         uint256 totalDebtDenominatedInUnderlyingToken = _convertWithAaveOraclePrice(totalDebtBase, underlyingTokenPrice);
         require(totalDebtDenominatedInUnderlyingToken <= uppie.maxDebt, "total debt larger than uppie.maxDebt");

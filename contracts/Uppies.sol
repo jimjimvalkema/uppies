@@ -9,6 +9,10 @@ interface IAaveOracle {
     function getAssetPrice(address asset) external view returns (uint256);
 }
 
+/// @title Automatic wallet top-ups using aave deposits/debt 
+/// @author Jim Jim Valkema
+/// @notice TODO
+/// @dev TODO
 contract Uppies {
     event NewUppie(address indexed payee, uint256 _uppiesIndex);
     event RemovedUppie(address indexed payee, uint256 _uppiesIndex);
@@ -21,8 +25,9 @@ contract Uppies {
         aaveOracle = _aaveOracle;
     }
 
-    // you can gasGolf this by hashing all this and only storing the hash. Or even off-chain signatures. 
-    // But that mainly affects cost of creating an uppie, but the benefit would be small since creating uppies doesn't happen often 
+    /// @custom:gasgolf
+    /// you can gasGolf this by hashing all this and only storing the hash. Or even off-chain signatures. 
+    /// But that mainly affects cost of creating an uppie, but the benefit would be small since creating uppies doesn't happen often 
     struct Uppie {
         address recipient;
         address aaveToken;    
@@ -38,49 +43,34 @@ contract Uppies {
         uint256 topUpGas;
         uint256 fillerReward;
     }
-
-    // more gas efficient maxing would be off-chain sigs 
+    
     mapping(address => mapping(uint256 => Uppie)) public uppiesPerUser;
-    // to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
+
+    /// @custom:gasgolf
+    /// to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
     mapping(address => uint256) public nextUppieIndexPerUser;       
+    
 
+    /// @notice creates new uppie
+    /// @dev TODO
+    /// @param uppie the new uppie
     function createUppie(
-        address _recipientAccount,
-        address _aaveToken,
-        bool _canBorrow,
-        uint256 _maxDebt,
-        uint256 _topUpThreshold,
-        uint256 _topUpTarget,
-        uint256 _minHealthFactor,
-
-        uint256 _maxBaseFee,
-        uint256 _priorityFee,       
-        uint256 _topUpGas,
-        uint256 _fillerReward
+        Uppie memory uppie
     ) public {
-        address underlyingToken = IAToken(_aaveToken).UNDERLYING_ASSET_ADDRESS();
-        Uppie memory uppie = Uppie(
-            _recipientAccount,
-            _aaveToken,
-            underlyingToken,
-            _canBorrow,
-            _maxDebt,
-            _topUpThreshold,
-            _topUpTarget,
-            _minHealthFactor,
-            _maxBaseFee,
-            _priorityFee,       
-            _topUpGas,
-            _fillerReward
-        );
+        address underlyingToken = IAToken(uppie.aaveToken).UNDERLYING_ASSET_ADDRESS();
+        require(uppie.underlyingToken == underlyingToken, "the underlying token from uppie.underlyingToken doesn't match uppie.aaveToken" );
         
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
-
+        nextUppieIndexPerUser[msg.sender] = _nextUppieIndex + 1;
+        
         uppiesPerUser[msg.sender][_nextUppieIndex] = uppie; 
         emit NewUppie(msg.sender, _nextUppieIndex);
-        nextUppieIndexPerUser[msg.sender] = _nextUppieIndex + 1;
     }
 
+    /// @notice edits an existing uppie
+    /// @dev TODO
+    /// @param uppie The number of rings from dendrochronological sample
+    /// @param _uppiesIndex index of the uppie to edit
     function editUppie(
         Uppie memory uppie,
         uint256 _uppiesIndex
@@ -94,6 +84,9 @@ contract Uppies {
         emit NewUppie(msg.sender, _uppiesIndex);
     }
 
+    /// @notice edits an existing uppie
+    /// @dev removing a uppie that isn't the last one will leave a gap in the array. This shouldn't break anything, it just makes the ui slower (if it doesn't use events)
+    /// @param _uppiesIndex index of the uppie to remove
     function removeUppie(uint256 _uppiesIndex) public {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
@@ -105,7 +98,10 @@ contract Uppies {
         emit RemovedUppie(msg.sender, _uppiesIndex);
     }
 
-    // ethereum communism!
+    /// @notice fills a uppie for free! Fill by withdrawing only 
+    /// @dev TODO
+    /// @param _uppiesIndex index of the uppie to fill
+    /// @param payee owner of the uppie and also payee
     function sponsoredFillUppie(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
@@ -133,6 +129,10 @@ contract Uppies {
         emit FilledUppie(payee, _uppiesIndex);
     }
 
+    /// @notice fills a uppie for free! Fill by borrowing only 
+    /// @dev TODO
+    /// @param _uppiesIndex index of the uppie to fill
+    /// @param payee owner of the uppie and also payee
     function sponsoredFillUppieWithBorrow(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
@@ -167,6 +167,10 @@ contract Uppies {
         emit FilledUppie(payee, _uppiesIndex);
     }
 
+    /// @notice fills a uppie by withdrawing only 
+    /// @dev TODO
+    /// @param _uppiesIndex index of the uppie to fill
+    /// @param payee owner of the uppie and also payee
     function fillUppie(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 
@@ -198,6 +202,10 @@ contract Uppies {
         emit FilledUppie(payee, _uppiesIndex);
     }
 
+    /// @notice fills a uppie for free! Fill by borrowing only 
+    /// @dev TODO
+    /// @param _uppiesIndex index of the uppie to fill
+    /// @param payee owner of the uppie and also payee
     function fillUppieWithBorrow(uint256 _uppiesIndex, address payee) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
 

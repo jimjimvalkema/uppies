@@ -164,20 +164,22 @@ describe("Uppies", function () {
         const _recipientAccount = userRecipientWallet.address
         const _aaveTokenAddress = ATokenEureAddress // Aave Gnosis EURe
         const _canBorrow = true
-        const _topUpThreshold = 100n * 10n ** 18n         // 100 eure
-        const _topUpTarget = 130n * 10n ** 18n         // 130 eure
-        const _minHealthFactor = BigInt(1.1 * 10 ** 18)    // 1.1 healthFactor
-        const _maxBaseFee = 30n * 10n ** 9n           // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost
-        const _priorityFee = BigInt(0.01 * 10 ** 9)    // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward
-        const _topUpGas = 337910n                 // average gas cost of fillUppie. @TODO update this
+        const _maxDebt = 300n * 10n ** 18n              // 300 eure 
+        const _topUpThreshold = 100n * 10n ** 18n       // 100 eure
+        const _topUpTarget = 130n * 10n ** 18n          // 130 eure
+        const _minHealthFactor = BigInt(1.1 * 10 ** 18) // 1.1 healthFactor
+        const _maxBaseFee = 30n * 10n ** 9n             // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost
+        const _priorityFee = BigInt(0.01 * 10 ** 9)     // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward
+        const _topUpGas = 337910n                       // average gas cost of fillUppie. @TODO update this
         const _fillerReward = BigInt(0.001 * 10 ** 18)  // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
 
         // create
         console.log("creating uppie")
-        await (await uppiesContractUser.createUppie(
+        const createUppieTx = await (await uppiesContractUser.createUppie(
             _recipientAccount,
             _aaveTokenAddress,
             _canBorrow,
+            _maxDebt,
             _topUpThreshold,
             _topUpTarget,
             _minHealthFactor,
@@ -196,6 +198,8 @@ describe("Uppies", function () {
         //const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract:uppiesContractFiller }))
         const pendingFills = uppieArray.map((uppie) => uppiesContractFiller.fillUppieWithBorrow(uppie.uppiesIndex, uppie.payeeAddress, { gasLimit: 600000 }))
         const settledFills = await Promise.all((await Promise.all(pendingFills)).map((pendingTx) => pendingTx.wait(1)))
+        console.log({gasUsedFill: settledFills[0].gasUsed})
+        console.log({gasUsedCreateUppie: createUppieTx.gasUsed})
     });
 
 
@@ -260,21 +264,23 @@ describe("Uppies", function () {
 
         const _recipientAccount = userRecipientWallet.address
         const _aaveTokenAddress = ATokenEureAddress // Aave Gnosis EURe
-        const _canBorrow = false
-        const _topUpThreshold = 100n * 10n ** 18n         // 100 eure
-        const _topUpTarget = 130n * 10n ** 18n         // 130 eure
-        const _minHealthFactor = BigInt(1.1 * 10 ** 18)    // 1.1 healthFactor
-        const _maxBaseFee = 30n * 10n ** 9n           // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost
-        const _priorityFee = BigInt(0.01 * 10 ** 9)    // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward
-        const _topUpGas = 337910n                 // average gas cost of fillUppie. @TODO update this
-        const _fillerReward = BigInt(0.001 * 10 ** 18)  // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
+        const _canBorrow = true
+        const _maxDebt = 300n * 10n ** 18n              // 300 eure 
+        const _topUpThreshold = 100n * 10n ** 18n       // 100 eure
+        const _topUpTarget = 130n * 10n ** 18n          // 130 eure
+        const _minHealthFactor = BigInt(1.1 * 10 ** 18) // 1.1 healthFactor
+        const _maxBaseFee = 30n * 10n ** 9n             // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost
+        const _priorityFee = BigInt(0.01 * 10 ** 9)     // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward
+        const _topUpGas = 337910n                       // average gas cost of fillUppie. @TODO update this
+        const _fillerReward = BigInt(0.001 * 10 ** 18)  // 0.001 euro  
 
         // create
         console.log("creating uppie")
-        await (await uppiesContractUser.createUppie(
+        const createUppieTx = await (await uppiesContractUser.createUppie(
             _recipientAccount,
             _aaveTokenAddress,
             _canBorrow,
+            _maxDebt,
             _topUpThreshold,
             _topUpTarget,
             _minHealthFactor,
@@ -292,6 +298,8 @@ describe("Uppies", function () {
         // TODO filter out only fillable uppies
         const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract: uppiesContractFiller }))
         const settledFills = await Promise.all((await Promise.all(pendingFills)).map((pendingTx) => pendingTx.wait(1)))
+        console.log({gasUsedFill: settledFills[0].gasUsed})
+        console.log({gasUsedCreateUppie: createUppieTx.gasUsed})
     });
 })
 

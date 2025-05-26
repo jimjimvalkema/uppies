@@ -74,18 +74,6 @@ describe("Uppies", function () {
     })
 
     it("Create a uppie and fill it by borrowing", async function () {
-        // await ethers.provider.send(
-        //     "hardhat_reset",
-        //     [
-        //         {
-        //             forking: {
-        //                 jsonRpcUrl: GNOSIS_RPC_URL,
-        //                 blockNumber: undefined
-        //             },
-        //         },
-        //     ],
-        // );
-
         const provider = ethers.provider
         const [deployerWallet, userPayeeWallet, userRecipientWallet, uppieFillerWallet] = await ethers.getSigners()
 
@@ -114,38 +102,19 @@ describe("Uppies", function () {
         const ATokenContractUser = IAToken__factory.connect(ATokenEureAddress, userPayeeWallet)
         const ATokenEureDebtTokenUser = ICreditDelegationToken__factory.connect(ATokenEureDebtTokenAddress, userPayeeWallet)
 
-        // // get eure! 10000 eure!
-        // const underlyingTokenContractEureWhale = underlyingTokenContract.connect(eureWhaleWallet)
-        // await (await underlyingTokenContractEureWhale.transfer(userPayeeWallet.address, 10000n * 10n ** 18n)).wait(1)
-
         // // deposit into aave
         const aavPoolInstanceContractUserPayee = aavPoolInstanceContract.connect(userPayeeWallet)
         const underlyingTokenContractUserPayee = underlyingTokenContract.connect(userPayeeWallet)
-        // await (await underlyingTokenContractUserPayee.approve(aavPoolInstanceContractUserPayee.target, 2n ** 256n - 1n)).wait(1)
-        // await (await aavPoolInstanceContractUserPayee.supply(
-        //     underlyingTokenContract.target,
-        //     10000n * 10n ** 18n,
-        //     userPayeeWallet.address,
-        //     0n
-        // )).wait(1)
 
         await (await ATokenContractUser.approve(uppiesContract.target, 2n ** 256n - 1n)).wait(1)
 
         console.log("send weth")
         const wethContractWethWhale = wethContract.connect(wethWhaleWallet)
-        console.log({ wethWhaleBalance: await wethContractWethWhale.balanceOf(wethWhaleWallet.address) })
         await (await wethContractWethWhale.transfer(userPayeeWallet.address, 100n * 10n ** 18n)).wait(1)
-        console.log({ wethUserPayee: await wethContractWethWhale.balanceOf(userPayeeWallet.address) })
-
-        console.log("approving weth")
-        const wethContractUserPayee = wethContract.connect(userPayeeWallet)
-        await (await wethContractUserPayee.approve(aavPoolInstanceContractUserPayee.target, 2n ** 256n - 1n)).wait(1)
-        console.log({ userPayeeWethApprovalToPool: await wethContractUserPayee.allowance(userPayeeWallet.address, aavPoolInstanceContract.target) })
-
-        console.log("approving eure")
-        await (await underlyingTokenContractUserPayee.approve(aavPoolInstanceContractUserPayee.target, 2n ** 256n - 1n)).wait(1)
 
         console.log("supplying")
+        const wethContractUserPayee = wethContract.connect(userPayeeWallet)
+        await (await wethContractUserPayee.approve(aavPoolInstanceContractUserPayee.target, 2n ** 256n - 1n)).wait(1)
         await (await aavPoolInstanceContractUserPayee.supply(
             wethContractUserPayee.target,
             10n * 10n ** 18n,
@@ -154,8 +123,9 @@ describe("Uppies", function () {
         )).wait(1)
 
 
-        console.log("approving delegation eure debt token", ATokenEureDebtTokenUser.target)
+        console.log("approving delegation eure debt token and underlying token", ATokenEureDebtTokenUser.target)
         await (await ATokenEureDebtTokenUser.approveDelegation(uppiesContract.target, 2n ** 256n - 1n)).wait(1)
+        await (await underlyingTokenContractUserPayee.approve(aavPoolInstanceContractUserPayee.target, 2n ** 256n - 1n)).wait(1)
 
         // make uppie
 
@@ -204,18 +174,6 @@ describe("Uppies", function () {
 
 
     it("Create a uppie and fill it by withdrawing", async function () {
-
-        // await ethers.provider.send(
-        //     "hardhat_reset",
-        //     [
-        //         {
-        //             forking: {
-        //                 jsonRpcUrl: GNOSIS_RPC_URL,
-        //                 blockNumber: undefined
-        //             },
-        //         },
-        //     ],
-        // );
         const provider = ethers.provider
         const [deployerWallet, userPayeeWallet, userRecipientWallet, uppieFillerWallet] = await ethers.getSigners()
 
@@ -257,7 +215,6 @@ describe("Uppies", function () {
         )).wait(1)
 
         await (await ATokenContractUser.approve(uppiesContract.target, 2n ** 256n - 1n)).wait(1)
-        console.log({ underlyingTokenApprovalToUppies: await ATokenContractUser.allowance(userPayeeWallet.address, uppiesContract.target) })
 
         // make uppie
         const uppiesContractUser = uppiesContract.connect(userPayeeWallet)

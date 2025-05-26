@@ -20,7 +20,7 @@ export async function queryEventInChunks({chunksize=20000,filter,startBlock, end
     const lastBlock = endBlock ? endBlock : await provider.getBlockNumber("latest")
     const numIters = Math.ceil((lastBlock-startBlock)/chunksize)
     const allEvents = []
-    console.log("scanning events: ",{lastBlock,startBlock,chunksize,numIters})
+    //console.log("scanning events: ",{lastBlock,startBlock,chunksize,numIters})
     for (let index = 0; index < numIters; index++) {
         const start = index*chunksize + startBlock
         const stop =  (start + chunksize) > lastBlock ? lastBlock :  (start + chunksize)

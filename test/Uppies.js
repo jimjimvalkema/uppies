@@ -136,14 +136,17 @@ describe("Uppies", function () {
             aaveToken: ATokenEureAddress,
             underlyingToken: underlyingTokenContract.target,
             canBorrow: true,
+            canWithdraw: true,
             maxDebt: 1000n * 10n ** 18n,                // 1000 eure 
             topUpThreshold: 100n * 10n ** 18n,          // 100 eure,
             topUpTarget: 130n * 10n ** 18n,             // 130 eure,
             minHealthFactor: BigInt(1.1 * 10 ** 18),    // 1.1 healthFactor,
-            maxBaseFee: 30n * 10n ** 9n,                // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost,
-            priorityFee: BigInt(0.01 * 10 ** 9),        // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward,
-            topUpGas: 454715n,                          // average gas cost of fillUppie. @TODO update this,
-            fillerReward: BigInt(0.001 * 10 ** 18),     // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
+            gas: {
+                maxBaseFee: 30n * 10n ** 9n,                // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost,
+                priorityFee: BigInt(0.01 * 10 ** 9),        // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward,
+                topUpGas: 460560n,                          // average gas cost of fillUppie. @TODO update this,
+                fillerReward: BigInt(0.001 * 10 ** 18),     // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
+            }
         }
 
         // create
@@ -216,15 +219,18 @@ describe("Uppies", function () {
             recipient: userRecipientWallet.address,
             aaveToken: ATokenEureAddress,
             underlyingToken: underlyingTokenContract.target,
-            canBorrow: true,
+            canBorrow: false,
+            canWithdraw: true,
             maxDebt: 3000n * 10n ** 18n,                 // 300 eure 
             topUpThreshold: 100n * 10n ** 18n,          // 100 eure,
             topUpTarget: 130n * 10n ** 18n,             // 130 eure,
             minHealthFactor: BigInt(1.1 * 10 ** 18),    // 1.1 healthFactor,
-            maxBaseFee: 30n * 10n ** 9n,                // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost,
-            priorityFee: BigInt(0.01 * 10 ** 9),        // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward,
-            topUpGas: 403607n,                          // average gas cost of fillUppie. @TODO update this,
-            fillerReward: BigInt(0.001 * 10 ** 18),     // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
+            gas: {
+                maxBaseFee: 30n * 10n ** 9n,                // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost,
+                priorityFee: BigInt(0.01 * 10 ** 9),        // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward,
+                topUpGas: 390724n,                          // average gas cost of fillUppie. @TODO update this,
+                fillerReward: BigInt(0.001 * 10 ** 18),     // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
+            }
         }
 
         // create

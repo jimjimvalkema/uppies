@@ -9,13 +9,6 @@ interface IAaveOracle {
     function getAssetPrice(address asset) external view returns (uint256);
 }
 
-// TODO make seperate contract for filling uppies
-// gelato ux
-// 
-
-// look into zeal. It uses some kind of hook
-
-
 /// @title Automatic wallet top-ups using aave deposits/debt 
 /// @author Jim Jim Valkema
 /// @notice TODO
@@ -35,20 +28,25 @@ contract Uppies {
     /// @custom:gasgolf
     /// you can gasGolf this by hashing all this and only storing the hash. Or even off-chain signatures. 
     /// But that mainly affects cost of creating an uppie, but the benefit would be small since creating uppies doesn't happen often 
+    struct UppieGasSettings {
+        uint256 maxBaseFee;
+        uint256 priorityFee;
+        uint256 topUpGas;
+        uint256 fillerReward;
+    }
+    
     struct Uppie {
         address recipient;
         address aaveToken;    
         address underlyingToken;
-        bool canBorrow;    // also add canWithdraw
+        bool canBorrow; 
+        bool canWithdraw;
         uint256 maxDebt;
         uint256 topUpThreshold; // when to Uppie
         uint256 topUpTarget;    // can be a higher number than topUpThreshold so you don't have to top-up every tx
         uint256 minHealthFactor;
 
-        uint256 maxBaseFee;
-        uint256 priorityFee;
-        uint256 topUpGas;
-        uint256 fillerReward;
+        UppieGasSettings gas;
     }
     
     // factory would simplify code
@@ -101,23 +99,25 @@ contract Uppies {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
 
-        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),false,0,0,0,0,0,0,0,0);
+        // TODO can this be more efficient?
+        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),false,false,0,0,0,0,UppieGasSettings(0,0,0,0));
         if (_uppiesIndex == _nextUppieIndex - 1) {
             nextUppieIndexPerUser[msg.sender] = _nextUppieIndex - 1;
         }
         emit RemovedUppie(msg.sender, _uppiesIndex);
     }
 
-    /// @notice fills a uppie for free! Fill by withdrawing only 
-    /// @dev TODO
+    /// @notice fills a uppie either by withdrawing or borrowing.
+    /// @dev 
     /// @param _uppiesIndex index of the uppie to fill
     /// @param payee owner of the uppie and also payee
+    /// @param isSponsored set to true if caller doesn't want compensation for gas
     function fillUppie(uint256 _uppiesIndex, address payee, bool isSponsored) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
    
         uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
         uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
-        bool doWithdraw = payeeBalance != 0;// && uppie.canWithdraw ;
+        bool doWithdraw = uppie.canWithdraw && payeeBalance != 0;
 
         require(doWithdraw || uppie.canBorrow, "can't withdraw and cant borrow"); // TODO payee balance empty error?
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
@@ -183,13 +183,13 @@ contract Uppies {
 
     function _calculateAmountsWithFillerFee(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance, uint256 underlyingTokenPrice) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
         uint256 blockBaseFee = block.basefee;
-        require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
+        require(blockBaseFee < uppie.gas.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
         // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large
         topUpSize = uppie.topUpTarget - recipientBalance;
-        uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
+        uint256 xdaiPaid = (uppie.gas.priorityFee + blockBaseFee) * uppie.gas.topUpGas;
         uint256 txCost = _convertWithAaveOraclePrice(xdaiPaid, underlyingTokenPrice);
         
-        fillerFee = txCost + uppie.fillerReward;
+        fillerFee = txCost + uppie.gas.fillerReward;
         total = topUpSize + fillerFee;
 
         // not enough money? just send what you got

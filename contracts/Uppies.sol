@@ -9,6 +9,13 @@ interface IAaveOracle {
     function getAssetPrice(address asset) external view returns (uint256);
 }
 
+// TODO make seperate contract for filling uppies
+// gelato ux
+// 
+
+// look into zeal. It uses some kind of hook
+
+
 /// @title Automatic wallet top-ups using aave deposits/debt 
 /// @author Jim Jim Valkema
 /// @notice TODO
@@ -32,7 +39,7 @@ contract Uppies {
         address recipient;
         address aaveToken;    
         address underlyingToken;
-        bool canBorrow;    
+        bool canBorrow;    // also add canWithdraw
         uint256 maxDebt;
         uint256 topUpThreshold; // when to Uppie
         uint256 topUpTarget;    // can be a higher number than topUpThreshold so you don't have to top-up every tx
@@ -44,10 +51,13 @@ contract Uppies {
         uint256 fillerReward;
     }
     
+    // factory would simplify code
+    // maybe derive index from signature? 
     mapping(address => mapping(uint256 => Uppie)) public uppiesPerUser;
 
     /// @custom:gasgolf
     /// to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
+    /// run ur own indexer
     mapping(address => uint256) public nextUppieIndexPerUser;       
     
 
@@ -102,181 +112,113 @@ contract Uppies {
     /// @dev TODO
     /// @param _uppiesIndex index of the uppie to fill
     /// @param payee owner of the uppie and also payee
-    function sponsoredFillUppie(uint256 _uppiesIndex, address payee) public {
+    function fillUppie(uint256 _uppiesIndex, address payee, bool isSponsored) public {
         Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
-
+   
         uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
         uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
+        bool doWithdraw = payeeBalance != 0;// && uppie.canWithdraw ;
 
-        require((uppie.canBorrow == false) && (payeeBalance != 0), "payee balance empty");
+        require(doWithdraw || uppie.canBorrow, "can't withdraw and cant borrow"); // TODO payee balance empty error?
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-        
-        uint256 topUpSize = _calculateTopUpSize(uppie, payeeBalance);
 
-        // withdraw
-        IERC20(uppie.aaveToken).transferFrom(payee, address(this), topUpSize);
-        IPool(aavePoolInstance).withdraw(
-            uppie.underlyingToken,
-            topUpSize,
-            address(this)
-        );
+        uint256 total;
+        uint256 fillerFee;
+        uint256 topUpSize;
+
+        // TODO if doWithdraw and isSponsored, we don't need it
+        uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken)); 
+
+        if(doWithdraw) {
+            (total, fillerFee, topUpSize) = _calculateAmounts(uppie, payeeBalance, recipientBalance, underlyingTokenPrice, isSponsored);
+            // withdraw
+            _withdraw(uppie, total, payee);
+        } else {
+            uint256 remainingAllowedDebt = _getAllowedDebtRemaining(uppie, payee, underlyingTokenPrice);
+            require(remainingAllowedDebt != 0, "not allowed to draw more debt");
+            (total, fillerFee, topUpSize) = _calculateAmounts(uppie, remainingAllowedDebt, recipientBalance, underlyingTokenPrice, isSponsored);
+            // borrow
+            _borrow(uppie, total, payee);
+        }
 
         // check health factor
         require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
         
         // send it!
         IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
+        if(!isSponsored) {
+            IERC20(uppie.underlyingToken).transfer(msg.sender, fillerFee);
+        }
         emit FilledUppie(payee, _uppiesIndex);
     }
 
-    /// @notice fills a uppie for free! Fill by borrowing only 
-    /// @dev TODO
-    /// @param _uppiesIndex index of the uppie to fill
-    /// @param payee owner of the uppie and also payee
-    function sponsoredFillUppieWithBorrow(uint256 _uppiesIndex, address payee) public {
-        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
-
-        uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
-        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
-
-        require(payeeBalance == 0, "can't borrow if payee still has a balance");
-        require(uppie.canBorrow , "this uppie is not allowed to borrow");
-        require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-           
-        uint256 totalBorrow = payeeBalance - uppie.topUpTarget;
-
-        // borrow
+    function _borrow(Uppie memory uppie, uint256 total, address payee) private {
         IPool(aavePoolInstance).borrow(
             uppie.underlyingToken,
-            totalBorrow,
+            total,
             2, // interestRateMode 1 is deprecated so we you can only use 2 which is variable
             0, // referral code
             payee
         );
-        // see what happened in aave
-        (,uint256 totalDebtBase , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
-        //check health
-        require(currentHealthFactor > uppie.minHealthFactor, "This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
-        //check debt
-        uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken));   
-        uint256 totalDebtDenominatedInUnderlyingToken = _convertWithAaveOraclePrice(totalDebtBase, underlyingTokenPrice);
-        require(totalDebtDenominatedInUnderlyingToken <= uppie.maxDebt, "total debt larger than uppie.maxDebt");
-
-        // send it!
-        IERC20(uppie.underlyingToken).transfer(uppie.recipient,totalBorrow);
-        emit FilledUppie(payee, _uppiesIndex);
     }
 
-    /// @notice fills a uppie by withdrawing only 
-    /// @dev TODO
-    /// @param _uppiesIndex index of the uppie to fill
-    /// @param payee owner of the uppie and also payee
-    function fillUppie(uint256 _uppiesIndex, address payee) public {
-        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
-
-        uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
-        uint256 blockBaseFee = block.basefee;
-        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
-
-        require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
-        require(payeeBalance != 0, "payee balance empty");
-        require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-        
-        uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken));  
-        (uint256 totalWithdraw, uint256 fillerFee, uint256 topUpSize) = _calculateTotalWithdrawAndFees(uppie, payeeBalance, blockBaseFee, underlyingTokenPrice);
-
-        // withdraw
-        IERC20(uppie.aaveToken).transferFrom(payee, address(this), totalWithdraw);
+    function _withdraw(Uppie memory uppie, uint256 total, address payee) private {
+        IERC20(uppie.aaveToken).transferFrom(payee, address(this), total);
         IPool(aavePoolInstance).withdraw(
             uppie.underlyingToken,
-            totalWithdraw,
+            total,
             address(this)
         );
-
-        // check health factor
-        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
-        
-        // send it!
-        IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
-        IERC20(uppie.underlyingToken).transfer(msg.sender, fillerFee);
-        emit FilledUppie(payee, _uppiesIndex);
     }
 
-    /// @notice fills a uppie for free! Fill by borrowing only 
-    /// @dev TODO
-    /// @param _uppiesIndex index of the uppie to fill
-    /// @param payee owner of the uppie and also payee
-    function fillUppieWithBorrow(uint256 _uppiesIndex, address payee) public {
-        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
+    function _getAllowedDebtRemaining(Uppie memory uppie, address payee, uint256 underlyingTokenPrice) public view returns (uint256 allowedDebtRemaining) {
+        (,uint256 totalDebtBase , , , ,) = IPool(aavePoolInstance).getUserAccountData(payee);
+        uint256 convertedTotalDebt = _convertWithAaveOraclePrice(totalDebtBase, underlyingTokenPrice);
+        if (uppie.maxDebt > convertedTotalDebt) {
+            return uppie.maxDebt - convertedTotalDebt;
+        } else {
+            return 0;
+        }
+    }
 
-        uint256 payeeBalance = IERC20(uppie.aaveToken).balanceOf(payee);
+    function _calculateAmountsWithFillerFee(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance, uint256 underlyingTokenPrice) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
         uint256 blockBaseFee = block.basefee;
-        uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
-
         require(blockBaseFee < uppie.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
-        require(payeeBalance == 0, "can't borrow if payee still has a balance");
-        require(uppie.canBorrow , "this uppie is not allowed to borrow");
-        require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
-       
-        uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken));       
-        (uint256 totalBorrow, uint256 fillerFee, uint256 topUpSize) = _calculateTotalBorrowAndFees(uppie, blockBaseFee, underlyingTokenPrice);
-
-        // borrow
-        IPool(aavePoolInstance).borrow(
-            uppie.underlyingToken,
-            totalBorrow,
-            2, // interestRateMode 1 is deprecated so we you can only use 2 which is variable
-            0, // referral code
-            payee
-        );
-        // see what happened in aave
-        (,uint256 totalDebtBase , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
-        //check health
-        require(currentHealthFactor > uppie.minHealthFactor, "This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
-        //check debt
-        uint256 totalDebtDenominatedInUnderlyingToken = _convertWithAaveOraclePrice(totalDebtBase, underlyingTokenPrice);
-        require(totalDebtDenominatedInUnderlyingToken <= uppie.maxDebt, "total debt larger than uppie.maxDebt");
-
-        // send it!
-        IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
-        IERC20(uppie.underlyingToken).transfer(msg.sender, fillerFee);
-        emit FilledUppie(payee, _uppiesIndex);
-    }
-
-    function _calculateTotalWithdrawAndFees(Uppie memory uppie, uint256 payeeBalance, uint256 blockBaseFee, uint256 underlyingTokenPrice) pure private returns(uint256 totalWithdraw, uint256 fillerFee, uint256 topUpSize) {
         // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large
-        topUpSize = payeeBalance - uppie.topUpTarget;
+        topUpSize = uppie.topUpTarget - recipientBalance;
         uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
         uint256 txCost = _convertWithAaveOraclePrice(xdaiPaid, underlyingTokenPrice);
         
         fillerFee = txCost + uppie.fillerReward;
-        totalWithdraw = topUpSize + fillerFee;
+        total = topUpSize + fillerFee;
 
         // not enough money? just send what you got
-        if (payeeBalance < totalWithdraw) {
-            totalWithdraw = payeeBalance;
+        if (payeeBalance < total) {
+            require(payeeBalance > fillerFee, "payee cant afford the filler fee");
+            total = payeeBalance;
             topUpSize = payeeBalance - fillerFee;
         }
-        return (totalWithdraw, fillerFee, topUpSize);
+        return (total, fillerFee, topUpSize);
+    }
+    
+    function _calculateTopUpSize(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance) pure private returns(uint256 topUpSize) {
+        topUpSize = uppie.topUpTarget - recipientBalance;
+        if (payeeBalance < topUpSize) {
+            return payeeBalance;
+        } else {
+            return topUpSize;
+        }
     }
 
-    function _calculateTotalBorrowAndFees(Uppie memory uppie, uint256 blockBaseFee, uint256 underlyingTokenPrice) pure private returns(uint256 totalBorrow, uint256 fillerFee, uint256 topUpSize) {
-        // TODO see if it is possible to calculate the max amount able to borrow before going to below uppie.minHealthFactor. It might not be possible?
-        //topUpSize = maxBorrow - uppie.topUpTarget;
-        topUpSize = uppie.topUpTarget;
-        uint256 xdaiPaid = (uppie.priorityFee + blockBaseFee) * uppie.topUpGas;
-        uint256 txCost = _convertWithAaveOraclePrice(xdaiPaid, underlyingTokenPrice);
-        
-        fillerFee = txCost + uppie.fillerReward;
-        totalBorrow = topUpSize + fillerFee;
-
-        // \/ cant do this yet we need to calculate `maxBorrow` first but idk how yet
-        // not enough money? just send what you got
-        // if (payeeBalance < totalWithdraw) {
-        //     totalWithdraw = payeeBalance;
-        //     topUpSize = payeeBalance - fillerFee;
-        // }
-        return (totalBorrow, fillerFee, topUpSize);
+    function _calculateAmounts(Uppie memory uppie, uint256 payeeBalance,uint256 recipientBalance, uint256 underlyingTokenPrice, bool isSponsored) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
+        if (isSponsored) {
+            (total, fillerFee, topUpSize) = _calculateAmountsWithFillerFee(uppie, payeeBalance, recipientBalance, underlyingTokenPrice);
+        } else {
+            total = _calculateTopUpSize(uppie, payeeBalance, recipientBalance);
+            topUpSize = total;
+            fillerFee = 0;
+        }
+        return (total, fillerFee, topUpSize);
     }
 
     function _invertAaveOraclePrice(uint256 oraclePrice) private pure returns(uint256 invertedOraclePrice)  {
@@ -287,15 +229,6 @@ contract Uppies {
     function _convertWithAaveOraclePrice(uint256 amount, uint256 oraclePrice) private pure returns(uint256 convertedAmount)  {
         // aave oracle prices are 10^8 too large   
         return amount * oraclePrice / 100000000;
-    }
-
-    function _calculateTopUpSize(Uppie memory uppie, uint256 payeeBalance) pure private returns(uint256 topUpSize) {
-        topUpSize = payeeBalance - uppie.topUpTarget;
-        if (payeeBalance < topUpSize) {
-            return payeeBalance;
-        } else {
-            return topUpSize;
-        }
     }
 
     function _isSafeHealthFactor(uint256 minHealthFactor, address payee) view private returns(bool isSafe) {

@@ -48,16 +48,13 @@ contract Uppies {
 
         UppieGasSettings gas;
     }
-    
+
     // factory would simplify code
     // maybe derive index from signature? 
     mapping(address => mapping(uint256 => Uppie)) public uppiesPerUser;
 
-    /// @custom:gasgolf
-    /// to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
-    /// run ur own indexer
+    /// @custom:gasgolf to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
     mapping(address => uint256) public nextUppieIndexPerUser;       
-    
 
     /// @notice creates new uppie
     /// @dev TODO
@@ -67,10 +64,10 @@ contract Uppies {
     ) public {
         address underlyingToken = IAToken(uppie.aaveToken).UNDERLYING_ASSET_ADDRESS();
         require(uppie.underlyingToken == underlyingToken, "the underlying token from uppie.underlyingToken doesn't match uppie.aaveToken" );
-        
+
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         nextUppieIndexPerUser[msg.sender] = _nextUppieIndex + 1;
-        
+
         uppiesPerUser[msg.sender][_nextUppieIndex] = uppie; 
         emit NewUppie(msg.sender, _nextUppieIndex);
     }
@@ -99,7 +96,7 @@ contract Uppies {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
         require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
 
-        // TODO can this be more efficient?
+        /// @custom:gasgolf can this be more efficient?
         uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),false,false,0,0,0,0,UppieGasSettings(0,0,0,0));
         if (_uppiesIndex == _nextUppieIndex - 1) {
             nextUppieIndexPerUser[msg.sender] = _nextUppieIndex - 1;
@@ -107,7 +104,7 @@ contract Uppies {
         emit RemovedUppie(msg.sender, _uppiesIndex);
     }
 
-    /// @notice fills a uppie either by withdrawing or borrowing.
+    /// @notice fills an uppie either by withdrawing or borrowing.
     /// @dev 
     /// @param _uppiesIndex index of the uppie to fill
     /// @param payee owner of the uppie and also payee
@@ -126,7 +123,7 @@ contract Uppies {
         uint256 fillerFee;
         uint256 topUpSize;
 
-        // TODO if doWithdraw and isSponsored, we don't need it
+        // TODO if doWithdraw and isSponsored, we don't need underlyingTokenPrice
         uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken)); 
 
         if(doWithdraw) {
@@ -145,7 +142,7 @@ contract Uppies {
         require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
         
         // send it!
-        IERC20(uppie.underlyingToken).transfer(uppie.recipient,topUpSize);
+        IERC20(uppie.underlyingToken).transfer(uppie.recipient, topUpSize);
         if(!isSponsored) {
             IERC20(uppie.underlyingToken).transfer(msg.sender, fillerFee);
         }
@@ -181,14 +178,25 @@ contract Uppies {
         }
     }
 
+    function _calculateAmounts(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance, uint256 underlyingTokenPrice, bool isSponsored) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
+        if (isSponsored) {
+            (total, fillerFee, topUpSize) = _calculateAmountsWithFillerFee(uppie, payeeBalance, recipientBalance, underlyingTokenPrice);
+        } else {
+            total = _calculateTopUpSize(uppie, payeeBalance, recipientBalance);
+            topUpSize = total;
+            fillerFee = 0;
+        }
+        return (total, fillerFee, topUpSize);
+    }
+
     function _calculateAmountsWithFillerFee(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance, uint256 underlyingTokenPrice) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
         uint256 blockBaseFee = block.basefee;
         require(blockBaseFee < uppie.gas.maxBaseFee, "base fee is higher than then the uppie.maxBaseFee");
-        // 1 / price to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large
+    
         topUpSize = uppie.topUpTarget - recipientBalance;
         uint256 xdaiPaid = (uppie.gas.priorityFee + blockBaseFee) * uppie.gas.topUpGas;
         uint256 txCost = _convertWithAaveOraclePrice(xdaiPaid, underlyingTokenPrice);
-        
+
         fillerFee = txCost + uppie.gas.fillerReward;
         total = topUpSize + fillerFee;
 
@@ -200,9 +208,11 @@ contract Uppies {
         }
         return (total, fillerFee, topUpSize);
     }
-    
+
     function _calculateTopUpSize(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance) pure private returns(uint256 topUpSize) {
         topUpSize = uppie.topUpTarget - recipientBalance;
+
+        // not enough money? just send what you got
         if (payeeBalance < topUpSize) {
             return payeeBalance;
         } else {
@@ -210,31 +220,20 @@ contract Uppies {
         }
     }
 
-    function _calculateAmounts(Uppie memory uppie, uint256 payeeBalance,uint256 recipientBalance, uint256 underlyingTokenPrice, bool isSponsored) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
-        if (isSponsored) {
-            (total, fillerFee, topUpSize) = _calculateAmountsWithFillerFee(uppie, payeeBalance, recipientBalance, underlyingTokenPrice);
-        } else {
-            total = _calculateTopUpSize(uppie, payeeBalance, recipientBalance);
-            topUpSize = total;
-            fillerFee = 0;
-        }
-        return (total, fillerFee, topUpSize);
-    }
-
     function _invertAaveOraclePrice(uint256 oraclePrice) private pure returns(uint256 invertedOraclePrice)  {
-         // (1 / price) to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large so we need to do (10^(8*2) / price) 
+         // (1 / price) to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large so we need to do (10^(8*2) / price)
         return 10000000000000000 / oraclePrice;
     }
 
     function _convertWithAaveOraclePrice(uint256 amount, uint256 oraclePrice) private pure returns(uint256 convertedAmount)  {
-        // aave oracle prices are 10^8 too large   
+        // aave oracle prices are 10^8 too large
         return amount * oraclePrice / 100000000;
     }
 
     function _isSafeHealthFactor(uint256 minHealthFactor, address payee) view private returns(bool isSafe) {
         // health factor check just incase user used the token as collateral. We don't want them to get liquidated!
         // needs to be after the withdraw so we can see if it went bad.
-        if ((minHealthFactor > 0)) {
+        if (minHealthFactor > 0) {
             (, , , , , uint256 currentHealthFactor) = IPool(aavePoolInstance).getUserAccountData(payee);
             return currentHealthFactor > minHealthFactor;
         } else {

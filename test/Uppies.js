@@ -10,7 +10,7 @@ import { Uppies__factory } from "../types/ethers-contracts/factories/Uppies.sol/
 import { IAToken__factory } from "../types/ethers-contracts/factories/interfaces/aave/IAToken__factory"
 import { ICreditDelegationToken__factory } from "../types/ethers-contracts/factories/interfaces/aave/ICreditDelegationToken__factory"
 
-import { fillUppie, syncUppies } from "../scripts/uppie-lib";
+import { fillUppie, isFillableUppie, syncUppies } from "../scripts/uppie-lib";
 
 // default network ( a fork of gnosis main chain with this repos config)
 const { ethers } = await network.connect();
@@ -155,9 +155,11 @@ describe("Uppies", function () {
 
         //fill uppie
         const uppiesContractFiller = uppiesContract.connect(uppieFillerWallet)
+        console.log({simulation: await uppiesContractFiller.fillUppie.estimateGas(0,userPayeeWallet.address, false)})
         const uppieDeploymentBlock = uppiesContract.deploymentTransaction().blockNumber
         const allUppies = await syncUppies({ startBlock: uppieDeploymentBlock, uppiesContract: uppiesContract })
         const uppieArray = Object.keys(allUppies).map((payeeAddress) => Object.keys(allUppies[payeeAddress]).map((index) => allUppies[payeeAddress][index])).flat()
+        console.log({isFillableUppie: await isFillableUppie({uppie:uppieArray[0], uppiesContract: uppiesContract})})
         // TODO filter out only fillable uppies
         //const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract:uppiesContractFiller }))
         const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract: uppiesContractFiller }))
@@ -166,6 +168,8 @@ describe("Uppies", function () {
         console.log({ gasUsedCreateUppie: createUppieTx.gasUsed })
         const aaveAccountData = await aavPoolInstanceContract.getUserAccountData(userPayeeWallet.address)
         console.log({aaveAccountData})
+        console.log({isFillableUppie: await isFillableUppie({uppie:uppieArray[0], uppiesContract: uppiesContract})})
+
     });
 
 
@@ -247,6 +251,7 @@ describe("Uppies", function () {
         const settledFills = await Promise.all((await Promise.all(pendingFills)).map((pendingTx) => pendingTx.wait(1)))
         console.log({ gasUsedFill: settledFills[0].gasUsed })
         console.log({ gasUsedCreateUppie: createUppieTx.gasUsed })
+        console.log({isFillableUppie: await isFillableUppie({uppie:uppieArray[0], uppiesContract: uppiesContract})})
     });
 })
 

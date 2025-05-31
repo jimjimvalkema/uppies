@@ -25,6 +25,11 @@
  */
 
 import { ethers } from "ethers"
+import { IAToken__factory } from "../types/ethers-contracts/factories/interfaces/aave/IAToken__factory"
+import { ICreditDelegationToken__factory } from "../types/ethers-contracts/factories/interfaces/aave/ICreditDelegationToken__factory"
+import { IPool__factory } from "../types/ethers-contracts/factories/interfaces/aave/IPool__factory"
+import { IAaveOracle__factory } from "../types/ethers-contracts/factories/Uppies.sol/IAaveOracle__factory"
+import { erc20Abi } from "viem"
 
 function removeNumberKeys(o) {
     console.log({o})
@@ -108,34 +113,73 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
 
 /**
  * 
- * @param {{uppie:Uppie, uppiesContract:ethers.Contract}} param0 
+ * @param {{uppie:syncedUppie, uppiesContract:ethers.Contract}} param0 
  * @returns 
  */
-export async function fillUppie({ uppie, uppiesContract }) {
-    const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress, { gasLimit: 600000 }) // should be 373000 to is safer
+export async function fillUppie({ uppie, uppiesContract, isSponsored=false }) {
+    const tx = await uppiesContract.fillUppie(uppie.uppiesIndex, uppie.payeeAddress,isSponsored, { gasLimit: 600000 }) // should be 373000 to is safer
     return tx
 }
 /** ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
- * @param {{uppie:Uppie, uppiesContract:ethers.Contract}} param0 
+ * @param {{uppie:syncedUppie, uppiesContract:import("../types/ethers-contracts/Uppies.sol/Uppies").Uppies}} param0 
  * @returns 
  */
 export async function isFillableUppie({ uppie, uppiesContract }) {
     const provider = uppiesContract.runner.provider
-    const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20ABI, provider)
-    const aaveTokenContract = new ethers.Contract(uppie.aaveToken, erc20ABI, provider)
-    const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipientAccount)
+    const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20Abi, provider)
+    const aaveTokenContract = IAToken__factory.connect(uppie.aaveToken, provider)
+    const aaveOracleContract = IAaveOracle__factory.connect(await uppiesContract.aaveOracle(), provider)
+    const aavePoolContract = IPool__factory.connect(await uppiesContract.aavePoolInstance(), provider)
+    const debtTokenAddress = await aavePoolContract.getReserveVariableDebtToken(uppie.underlyingToken)
+    const debtToken = ICreditDelegationToken__factory.connect(debtTokenAddress, provider)
+    const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipient)
     const payeeBalance = await aaveTokenContract.balanceOf(uppie.payeeAddress)
-
+    const creditDelegation  = await debtToken.borrowAllowance(uppie.payeeAddress, uppiesContract.target)
     const approval = await aaveTokenContract.allowance(uppie.payeeAddress, uppiesContract.target)
     const topUpSize = BigInt(uppie.topUpTarget) - recipientBalance
 
+    // TODO just getEstimate gas in try catch is prob enough and better. Maybe still do allowance checks since those errors are hard to debug sometimes
+    // keep this code for debugging
+    // also this info is use full for users
     const isBelowThreshold = recipientBalance < BigInt(uppie.topUpThreshold)
     const payeeHasBalance = Boolean(payeeBalance)
+
+    const enoughCreditDelegation = topUpSize < creditDelegation
+    const userAccountData = await aavePoolContract.getUserAccountData(uppie.payeeAddress)
+    const underlyingTokenPrice = Number(await aaveOracleContract.getAssetPrice(uppie.underlyingToken)) / 100000000
+    const topUpSizeBase = Number(topUpSize) * underlyingTokenPrice
+    
+    //console.log({totalDebtBase:Number(userAccountData.totalDebtBase), invertedUnderlyingTokenPrice: (1 / underlyingTokenPrice)})
+    const debtInUnderlyingToken = userAccountData.totalDebtBase === 0n ? 0 : Number(userAccountData.totalDebtBase) * (1 / underlyingTokenPrice)
+    const wontExceedMaxDebt = Boolean(uppie.maxDebt - BigInt(debtInUnderlyingToken) - topUpSize )
     const enoughAllowance = topUpSize < approval
+    const canBorrow = uppie.canBorrow
+    const canWithdraw = uppie.canWithdraw
+    const doesWithdraw = canWithdraw && payeeHasBalance && enoughAllowance
+    const doesBorrow = (!payeeHasBalance || !canWithdraw) && canBorrow && enoughCreditDelegation && wontExceedMaxDebt
+
+    // console.log({currentLiquidationThreshold: userAccountData.currentLiquidationThreshold, totalDebtBase: userAccountData.totalDebtBase, totalCollateralBase: userAccountData.totalCollateralBase})
+    const reproducedHealthFactor = Number(userAccountData.totalCollateralBase) * (Number(userAccountData.currentLiquidationThreshold) / 10000) / Number(userAccountData.totalDebtBase)
+    const healthFactorPostTopUp = doesBorrow ? Number(userAccountData.totalCollateralBase) * (Number(userAccountData.currentLiquidationThreshold) / 10000) / (topUpSizeBase + Number(userAccountData.totalDebtBase)) : reproducedHealthFactor
+    const wontGoBelowMinHealthFactor = uppie.minHealthFactor===0n || healthFactorPostTopUp > (Number(uppie.minHealthFactor) / 10**18)
+    //console.log({currentHealthFactor: Number(userAccountData.healthFactor)/10**18, reproducedHealthFactor , healthFactorPostTopUp})
     console.log(`\n-----checking uppie-----`)
-    console.log({ recipientAddress: uppie.recipientAccount, payeeAddress: uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex }, { isBelowThreshold, payeeHasBalance, enoughAllowance }, { uppie })
+    console.log({ recipientAddress: uppie.recipient, payeeAddress: uppie.payeeAddress, uppiesIndex: uppie.uppiesIndex }, {
+        doesWithdraw,
+        doesBorrow, 
+        canBorrow:uppie.canBorrow,
+        canWithdraw: uppie.canWithdraw, 
+        isBelowThreshold, 
+        wontExceedMaxDebt,
+        wontGoBelowMinHealthFactor,
+        payeeHasBalance, 
+        enoughAllowance, 
+        enoughCreditDelegation,
+        topUpSize
+    })
     console.log(`\n----------------\n`)
-    if (isBelowThreshold && payeeHasBalance && enoughAllowance) {
+    // TODO check that contract cant do topUpSize of zero!!
+    if (topUpSize &&(doesWithdraw || doesBorrow)) {
         return true
     } else {
         return false

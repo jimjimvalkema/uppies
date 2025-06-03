@@ -4,6 +4,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {IAToken} from './interfaces/aave/IAToken.sol';
 import {IPool} from './interfaces/aave/IPool.sol';
+import {DataTypes} from './interfaces/aave/DataTypes.sol';
 
 interface IAaveOracle {
     function getAssetPrice(address asset) external view returns (uint256);
@@ -62,14 +63,16 @@ contract Uppies {
     function createUppie(
         Uppie memory uppie
     ) public {
+        address payee = msg.sender;
         address underlyingToken = IAToken(uppie.aaveToken).UNDERLYING_ASSET_ADDRESS();
         require(uppie.underlyingToken == underlyingToken, "the underlying token from uppie.underlyingToken doesn't match uppie.aaveToken" );
+        require(!uppie.canBorrow || uppie.minHealthFactor >= 1, "cant set the minHealthFactor below 1 if borrowing is enabled");
 
-        uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
-        nextUppieIndexPerUser[msg.sender] = _nextUppieIndex + 1;
+        uint256 _nextUppieIndex = nextUppieIndexPerUser[payee];
+        nextUppieIndexPerUser[payee] = _nextUppieIndex + 1;
 
-        uppiesPerUser[msg.sender][_nextUppieIndex] = uppie; 
-        emit NewUppie(msg.sender, _nextUppieIndex);
+        uppiesPerUser[payee][_nextUppieIndex] = uppie; 
+        emit NewUppie(payee, _nextUppieIndex);
     }
 
     /// @notice edits an existing uppie
@@ -180,11 +183,11 @@ contract Uppies {
 
     function _calculateAmounts(Uppie memory uppie, uint256 payeeBalance, uint256 recipientBalance, uint256 underlyingTokenPrice, bool isSponsored) view private returns(uint256 total, uint256 fillerFee, uint256 topUpSize) {
         if (isSponsored) {
-            (total, fillerFee, topUpSize) = _calculateAmountsWithFillerFee(uppie, payeeBalance, recipientBalance, underlyingTokenPrice);
-        } else {
             total = _calculateTopUpSize(uppie, payeeBalance, recipientBalance);
             topUpSize = total;
             fillerFee = 0;
+        } else {
+            (total, fillerFee, topUpSize) = _calculateAmountsWithFillerFee(uppie, payeeBalance, recipientBalance, underlyingTokenPrice);
         }
         return (total, fillerFee, topUpSize);
     }
@@ -240,4 +243,15 @@ contract Uppies {
             return true;
         }
     }
+
+    // _isUsedAsCollateral is an expensive check. It makes createUppie ~14% more expensive
+    function _isUsedAsCollateral(address user, address asset) view public returns(bool) {
+        uint256 config = IPool(aavePoolInstance).getUserConfiguration(user).data;
+        uint256 assetIndex = IPool(aavePoolInstance).getReserveData(asset).id;
+        uint256 bitIndex = assetIndex*2+1; // assetIndex*2 because getUserConfiguration returns the packed bools i pairs of isDebt, isCollateral. +1 because we want to know if collateral. 
+        uint256 assetCollateralIndexMask = 1 << bitIndex; // shift 1 bit n times the bitIndex. 
+        bool isUsedAsCollateral = (config & assetCollateralIndexMask) > 0;
+        return isUsedAsCollateral;
+    }
+
 }

@@ -10,7 +10,7 @@ import { Uppies__factory } from "../types/ethers-contracts/factories/Uppies.sol/
 import { IAToken__factory } from "../types/ethers-contracts/factories/interfaces/aave/IAToken__factory"
 import { ICreditDelegationToken__factory } from "../types/ethers-contracts/factories/interfaces/aave/ICreditDelegationToken__factory"
 
-import { fillUppie, isFillableUppie, syncUppies } from "../scripts/uppie-lib";
+import { fillUppie, fillUppies, flattenUppiesPerUser, isFillableUppie, syncUppies } from "../scripts/uppie-lib";
 
 // default network ( a fork of gnosis main chain with this repos config)
 const { ethers } = await network.connect();
@@ -137,14 +137,14 @@ describe("Uppies", function () {
             underlyingToken: underlyingTokenContract.target,
             canBorrow: true,
             canWithdraw: true,
-            maxDebt: 1000n * 10n ** 18n,                // 1000 eure 
-            topUpThreshold: 100n * 10n ** 18n,          // 100 eure,
-            topUpTarget: 130n * 10n ** 18n,             // 130 eure,
-            minHealthFactor: BigInt(1.1 * 10 ** 18),    // 1.1 healthFactor,
+            maxDebt: 1000n * 10n ** 18n,                    // 1000 eure 
+            topUpThreshold: 100n * 10n ** 18n,              // 100 eure,
+            topUpTarget: 130n * 10n ** 18n,                 // 130 eure,
+            minHealthFactor: BigInt(1.1 * 10 ** 18),        // 1.1 healthFactor,
             gas: {
                 maxBaseFee: 30n * 10n ** 9n,                // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost,
                 priorityFee: BigInt(0.01 * 10 ** 9),        // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward,
-                topUpGas: 460560n,                          // average gas cost of fillUppie. @TODO update this,
+                topUpGas: 474336n,                          // average gas cost of fillUppie. @TODO update this,
                 fillerReward: BigInt(0.001 * 10 ** 18),     // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
             }
         }
@@ -155,21 +155,16 @@ describe("Uppies", function () {
 
         //fill uppie
         const uppiesContractFiller = uppiesContract.connect(uppieFillerWallet)
-        console.log({simulation: await uppiesContractFiller.fillUppie.estimateGas(0,userPayeeWallet.address, false)})
         const uppieDeploymentBlock = uppiesContract.deploymentTransaction().blockNumber
+        // sync uppies from chain
         const allUppies = await syncUppies({ startBlock: uppieDeploymentBlock, uppiesContract: uppiesContract })
-        const uppieArray = Object.keys(allUppies).map((payeeAddress) => Object.keys(allUppies[payeeAddress]).map((index) => allUppies[payeeAddress][index])).flat()
-        console.log({isFillableUppie: await isFillableUppie({uppie:uppieArray[0], uppiesContract: uppiesContract})})
-        // TODO filter out only fillable uppies
-        //const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract:uppiesContractFiller }))
-        const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract: uppiesContractFiller }))
-        const settledFills = await Promise.all((await Promise.all(pendingFills)).map((pendingTx) => pendingTx.wait(1)))
-        console.log({ gasUsedFill: settledFills[0].gasUsed })
+        const allUppiesFlat = flattenUppiesPerUser(allUppies)
+        //fill them
+        const txs = await fillUppies({uppies: allUppiesFlat, uppiesContract:uppiesContractFiller})
+        
+        // debug
+        console.log({ gasUsedFill: txs[0].gasUsed })
         console.log({ gasUsedCreateUppie: createUppieTx.gasUsed })
-        const aaveAccountData = await aavPoolInstanceContract.getUserAccountData(userPayeeWallet.address)
-        console.log({aaveAccountData})
-        console.log({isFillableUppie: await isFillableUppie({uppie:uppieArray[0], uppiesContract: uppiesContract})})
-
     });
 
 
@@ -232,7 +227,7 @@ describe("Uppies", function () {
             gas: {
                 maxBaseFee: 30n * 10n ** 9n,                // 30 gWei. ~0.01 dai, calculated by doing:  (0.01*10**18) / gasCost,
                 priorityFee: BigInt(0.01 * 10 ** 9),        // 0.01 gWei High in current gas market but likely too little when gnosis is congested. Filler can just pay it out of pocket from _fillerReward,
-                topUpGas: 390724n,                          // average gas cost of fillUppie. @TODO update this,
+                topUpGas: 404500n,                          // average gas cost of fillUppie. @TODO update this,
                 fillerReward: BigInt(0.001 * 10 ** 18),     // 0.001 euro          @TODO make it also work for other tokens so rewards stays 0.001 euro in value
             }
         }
@@ -241,17 +236,18 @@ describe("Uppies", function () {
         console.log("creating uppie")
         const createUppieTx = await (await uppiesContractUser.createUppie(newUppie)).wait(1)
 
-        //fill uppie
+        // fill uppie
         const uppiesContractFiller = uppiesContract.connect(uppieFillerWallet)
         const uppieDeploymentBlock = uppiesContract.deploymentTransaction().blockNumber
+        // sync uppies from chain
         const allUppies = await syncUppies({ startBlock: uppieDeploymentBlock, uppiesContract: uppiesContract })
-        const uppieArray = Object.keys(allUppies).map((payeeAddress) => Object.keys(allUppies[payeeAddress]).map((index) => allUppies[payeeAddress][index])).flat()
-        // TODO filter out only fillable uppies
-        const pendingFills = uppieArray.map((uppie) => fillUppie({ uppie, uppiesContract: uppiesContractFiller }))
-        const settledFills = await Promise.all((await Promise.all(pendingFills)).map((pendingTx) => pendingTx.wait(1)))
-        console.log({ gasUsedFill: settledFills[0].gasUsed })
+        const allUppiesFlat = flattenUppiesPerUser(allUppies)
+        // fill them
+        const txs = await fillUppies({uppies: allUppiesFlat, uppiesContract:uppiesContractFiller})
+        
+        // debug
+        console.log({ gasUsedFill: txs[0].gasUsed })
         console.log({ gasUsedCreateUppie: createUppieTx.gasUsed })
-        console.log({isFillableUppie: await isFillableUppie({uppie:uppieArray[0], uppiesContract: uppiesContract})})
     });
 })
 

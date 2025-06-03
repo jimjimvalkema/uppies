@@ -87,6 +87,7 @@ contract Uppies {
 
         address underlyingToken = IAToken(uppie.aaveToken).UNDERLYING_ASSET_ADDRESS();
         require(uppie.underlyingToken == underlyingToken, "the underlying token from uppie.underlyingToken doesn't match uppie.aaveToken" );
+        require(!uppie.canBorrow || uppie.minHealthFactor >= 1, "cant set the minHealthFactor below 1 if borrowing is enabled");
 
         uppiesPerUser[msg.sender][_uppiesIndex] = uppie;
         emit NewUppie(msg.sender, _uppiesIndex);

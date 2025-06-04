@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 // TODO get it from a cleaner source
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 // import {IScaledBalanceToken} from './IScaledBalanceToken.sol';
 // import {IInitializableAToken} from './IInitializableAToken.sol';
 
@@ -13,7 +14,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @author Aave
  * @notice Defines the basic interface for an AToken.
  */
-interface IAToken is IERC20 {//, IScaledBalanceToken, IInitializableAToken {
+interface IAToken is IERC20,IERC20Metadata {//, IScaledBalanceToken, IInitializableAToken {
   /**
    * @dev Emitted during the transfer action
    * @param from The user whose tokens are being transferred

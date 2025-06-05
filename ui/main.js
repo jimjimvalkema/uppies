@@ -296,20 +296,31 @@ async function setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress }
 
 async function getUppieFromForm({ provider }) {
     const formNodes = document.getElementById("createUppieForm").querySelectorAll("input");
-    const uppie = Object.fromEntries([...formNodes].map((n) => [n.name, n.value]))
-    console.log({ uppie })
-
+    const uppie = Object.fromEntries([...formNodes].map((n) => n.type==="checkbox" ? [n.name, n.checked]: [n.name, n.value]))
 
     // formatting
-    const underlyingToken = await getTokenInfo({ address: uppie.underlyingToken, provider })
-    uppie.topUpThreshold = ethers.parseUnits(uppie.topUpThreshold, underlyingToken.decimals)
-    uppie.topUpTarget = ethers.parseUnits(uppie.topUpTarget, underlyingToken.decimals)
-    uppie.maxBaseFee = BigInt(Number(uppie.maxBaseFee) * 10 ** 9) // convert gwei to wei
-    uppie.minHealthFactor = uppie.minHealthFactor === "" ? 115792089237316195423570985008687907853269984665640564039457584007913129639934n : BigInt(Number(uppie.minHealthFactor) * 10 ** 18)
-    uppie.recipientAccount = ethers.getAddress(uppie.recipientAccount)
-    uppie.payee = ethers.getAddress(uppie.payee)
-    uppie.underlyingToken = ethers.getAddress(uppie.underlyingToken)
-    uppie.aaveToken = ethers.getAddress(uppie.aaveToken)
+    const underlyingTokenInfo = await getTokenInfo({ address: uppie.underlyingToken, provider })
+    const debtTokenInfo = await getTokenInfo({ address: uppie.underlyingToken, provider })
+    uppie.topUpThreshold = ethers.parseUnits(uppie.topUpThreshold, underlyingTokenInfo.decimals)
+    uppie.topUpTarget = ethers.parseUnits(uppie.topUpTarget, underlyingTokenInfo.decimals)
+    uppie.minHealthFactor = BigInt(Number(uppie.minHealthFactor) * 10 ** 18)
+    uppie.maxDebt = uppie.maxDebt === "" ? 0n : ethers.parseUnits(uppie.maxDebt, debtTokenInfo.decimals)
+
+    // move gasSettings
+    uppie.gas = {
+        maxBaseFee: BigInt(Number(uppie.maxBaseFee) * 10 ** 9),
+        priorityFee: BigInt(Number(uppie.priorityFee) * 10 ** 9),
+        fillerReward: ethers.parseUnits(uppie.fillerReward, underlyingTokenInfo.decimals)
+    }
+    // moved
+    delete uppie.maxBaseFee
+    delete uppie.priorityFee
+    delete uppie.fillerReward
+    
+    // not needed
+    delete uppie.aaveDelegation
+    delete uppie.aaveTokenPermission
+    console.log({uppie})
     return uppie
 }
 window.getUppieFromForm = getUppieFromForm
@@ -485,9 +496,6 @@ async function validUppieFormCheck({ uppiesContract }) {
         inputStatus.aaveDelegationInput.isValid = true
         inputStatus.aaveDelegationInput.reason = undefined
     }
-
-
-
 
     runChecks(inputStatus, "topUpTargetInput", [checkEmpty, checkZero])
     runChecks(inputStatus, "recipientAccountInput", [checkEmpty,checkIsAddress])

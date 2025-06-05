@@ -241,7 +241,7 @@ export async function isFillableUppie({ uppie, uppiesContract, isSponsored = fal
  * @returns {syncedUppie} uppie
  */
 export async function getUppie({address, index, uppiesContract}) {
-    const uppieFromChain = await uppiesContract.uppiesPerUser(address, index)
+    const uppieFromChain = await getNamedStruct(uppiesContract, "uppiesPerUser", [address, index])
     return {...uppieFromChain, payee:address, index}
     
 }
@@ -253,16 +253,19 @@ export async function getUppie({address, index, uppiesContract}) {
  */
 export async function getAllUppies({address, uppiesContract, maxConcurrentCalls=20}) {
     const highestUppieIndex = await uppiesContract.nextUppieIndexPerUser(address)
+    console.log({highestUppieIndex})
     // TODO will break on high amounts if rpc is weak
-    const uppiesIndexes = new Array(highestUppieIndex).fill(0).map((v,i)=>i)
+    const uppiesIndexes = new Array(Number(highestUppieIndex)).fill(0).map((v,i)=>i)
+    console.log({uppiesIndexes})
 
     const batches = Math.ceil(uppiesIndexes.length / maxConcurrentCalls)
     const uppies = []
     for (let index = 0; index < batches; index++) {
         const uppieIndexesBatch = uppiesIndexes.slice((index) * maxConcurrentCalls, (index + 1) * maxConcurrentCalls)
+        console.log({uppieIndexesBatch})
         const uppieBatch = await Promise.all(uppieIndexesBatch.map((index)=>getUppie({address, index, uppiesContract})))
+        console.log({uppieBatch})
         uppies.push(uppieBatch.filter((uppie)=> uppie.canBorrow || uppie.canWithdraw))
     }
     return uppies.flat()
 }    
-window.getAllUppies = getAllUppies

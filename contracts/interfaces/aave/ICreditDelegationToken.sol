@@ -3,12 +3,15 @@
 
 pragma solidity ^0.8.0;
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
 /**
  * @title ICreditDelegationToken
  * @author Aave
  * @notice Defines the basic interface for a token supporting credit delegation.
  */
-interface ICreditDelegationToken {
+interface ICreditDelegationToken is IERC20,IERC20Metadata {
   /**
    * @dev Emitted on `approveDelegation` and `borrowAllowance
    * @param fromUser The address of the delegator

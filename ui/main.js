@@ -10,11 +10,15 @@ import { IPool__factory } from '../types/ethers-contracts/factories/interfaces/a
 import { ICreditDelegationToken__factory } from '../types/ethers-contracts/factories/interfaces/aave/ICreditDelegationToken__factory';
 window.getAllUppies = getAllUppies
 
+
+// TODO reload on switching accounts
+
 /**
  * @typedef {import('../scripts/uppie-lib').UppiesContract} UppiesContract
  */
 
 const CONTRACT_ADDRESS = "0xF438b730996Ad8CF60B58881c5defa72535b8Dbf"
+const TOP_UP_GAS = 474336n
 const CHAININFO = {
     chainId: "0x64",
     rpcUrls: ["https://rpc.gnosischain.com"],
@@ -38,20 +42,29 @@ async function getTokenInfo({ address, provider }) {
 
 }
 
-function postTxLinkUi(txhash) {
-    const a = document.getElementById("txlink")
-    a.innerText = `https://gnosisscan.io/tx/${txhash}`
-    a.href = `https://gnosisscan.io/tx/${txhash}`
-
+async function postTxLinkUi(hash, add=false) {
+    const link = `https://gnosisscan.io/tx/${hash}`;
+    const div = document.getElementById("txlinks")
+    if(!add) {
+        div.innerHTML = ""
+    }
+    const a = document.createElement("a")
+    a.innerText = link
+    a.href = link
+    div.appendChild(a)
+    div.appendChild(document.createElement("br"))
 }
 
 async function removeUppieHandler({ index, uppiesContract }) {
     console.log({ uppiesContract })
     const tx = await uppiesContract.removeUppie(index)
-    postTxLinkUi(tx.hash)
+    postTxLinkUi(tx)
 
 }
-
+/**
+ * 
+ * @param {{ address, uppiesContract:UppiesContract }} param0 
+ */
 async function listAllUppies({ address, uppiesContract }) {
     const provider = uppiesContract.runner.provider
     const allUppies = await getAllUppies({ address, uppiesContract })
@@ -66,15 +79,18 @@ async function listAllUppies({ address, uppiesContract }) {
         const underlyingToken = await getTokenInfo({ address: uppie.underlyingToken, provider: provider })
         // TODO edit button
         uppieLi.innerText = `
-        recipient: ${uppie.recipientAccount} 
+        recipient: ${uppie.recipient} 
         threshold: ${ethers.formatUnits(uppie.topUpThreshold, underlyingToken.decimals)} ${underlyingToken.symbol}
         target:${ethers.formatUnits(uppie.topUpTarget, underlyingToken.decimals)}  ${underlyingToken.symbol}
         token:  ${underlyingToken.name}
         `
         const removeUppieBtn = document.createElement("button")
+        const editUppieBtn = document.createElement("button")
         removeUppieBtn.innerText = "remove"
+        editUppieBtn.innerText = "edit TODO"
         removeUppieBtn.addEventListener("click", (event) => removeUppieHandler({ index, uppiesContract }))
-        uppieLi.appendChild(removeUppieBtn)
+        //editUppieBtn.addEventListener("click", (event) => editUppieBtnUppieHandler({ index, uppiesContract }))
+        uppieLi.append(removeUppieBtn,editUppieBtn)
         existingUppiesUl.appendChild(uppieLi)
         console.log("aaa")
     }
@@ -83,13 +99,15 @@ async function listAllUppies({ address, uppiesContract }) {
 window.listAllUppies = listAllUppies
 
 
-function showAdvancedBtnHandler({ uppiesContract }) {
+async function showAdvancedBtnHandler({ uppiesContract }) {
     const advancedOptionsEl = document.getElementById("advancedOptions")
     if (advancedOptionsEl.hidden) {
         advancedOptionsEl.hidden = false
     } else {
         advancedOptionsEl.hidden = true
     }
+    const underlyingTokenAddress = document.getElementById("underlyingTokenInput").value
+    await setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress })
     validUppieFormCheck({ uppiesContract })
 }
 
@@ -104,7 +122,7 @@ function topUpThresholdInputHandler({ event, uppiesContract }) {
     setClassWithEvent("topUpThreshold", event)
 
     if (document.getElementById("advancedOptions").hidden ) {
-        const permissionSuggestion = (Number(topUpTargetEl.value) * 100).toString()
+        const permissionSuggestion = (Number(topUpTargetEl.value) * 20).toString()
         document.getElementById("aaveTokenPermissionInput").value = permissionSuggestion
         document.getElementById("aaveDelegationInput").value = permissionSuggestion
     }
@@ -122,7 +140,7 @@ async function topUpTargetInputHandler({ event, provider, uppiesContract }) {
     }
     setClassWithEvent("topUpTarget", event)
     if (document.getElementById("advancedOptions").hidden ) {
-        const permissionSuggestion = (Number(topUpTargetEl.value) * 100).toString()
+        const permissionSuggestion = (Number(topUpTargetEl.value) * 20).toString()
         document.getElementById("aaveTokenPermissionInput").value = permissionSuggestion
         document.getElementById("aaveDelegationInput").value = permissionSuggestion
     }
@@ -255,7 +273,6 @@ async function underlyingTokenInputHandler({ event, signer, provider, aavePoolIn
         const currentAaveTokenAllowance = aaveTokenContract.allowance(signer.address, CONTRACT_ADDRESS)
         const aaveDebtToken = await aavePoolInstance.getReserveVariableDebtToken(underlyingTokenAddress)
         const debtToken = ICreditDelegationToken__factory.connect(aaveDebtToken, provider)
-        console.log("TODO delifatinm",{signer:signer.address, uppies:uppiesContract.target, debtToken:debtToken.target})
         const currentAaveTokenDelegation = debtToken.borrowAllowance(signer.address, uppiesContract.target)
         document.getElementById("currentAllowance").innerText = Math.round(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveToken).decimals) * 10000) / 10000
         console.log({currentAaveTokenDelegation: await currentAaveTokenDelegation})
@@ -310,7 +327,8 @@ async function getUppieFromForm({ provider }) {
     uppie.gas = {
         maxBaseFee: BigInt(Number(uppie.maxBaseFee) * 10 ** 9),
         priorityFee: BigInt(Number(uppie.priorityFee) * 10 ** 9),
-        fillerReward: ethers.parseUnits(uppie.fillerReward, underlyingTokenInfo.decimals)
+        fillerReward: ethers.parseUnits(uppie.fillerReward, underlyingTokenInfo.decimals),
+        topUpGas: TOP_UP_GAS
     }
     // moved
     delete uppie.maxBaseFee
@@ -327,68 +345,81 @@ window.getUppieFromForm = getUppieFromForm
 
 /**
  * 
- * @param {{event, uppiesContract:UppiesContract}} param0 
+ * @param {{aavePoolInstance:import('../types/ethers-contracts/interfaces/aave/IPool').IPool, runner: ethers.ContractRunner}} param0 
+ * @returns {Promise<import('../types/ethers-contracts/interfaces/aave/ICreditDelegationToken').ICreditDelegationToken>}
  */
-async function createUppieHandler({ event, uppiesContract }) {
+async function getDebtToken({ aavePoolInstance,runner }) {
+    const underlyingTokenAddress = ethers.getAddress(document.getElementById("underlyingTokenInput").value)
+    const debtTokenAddress = await aavePoolInstance.getReserveVariableDebtToken(underlyingTokenAddress)
+    return ICreditDelegationToken__factory.connect(debtTokenAddress,runner)
+}
+
+/**
+ * 
+ * @param {{runner: ethers.ContractRunner}} param0 
+ * @returns {import('../types/ethers-contracts/interfaces/aave/IAToken').IAToken}
+ */
+function getAToken({ runner }) {
+    const ATokenAddress = ethers.getAddress(document.getElementById("aaveTokenInput").value)
+    return IAToken__factory.connect(ATokenAddress, runner)
+}
+
+/**
+ * 
+ * @param {{event, uppiesContract:UppiesContract,aavePoolInstance:import('../types/ethers-contracts/interfaces/aave/IPool').IPoolInterface}} param0 
+ */
+async function createUppieHandler({ event, uppiesContract,aavePoolInstance }) {
     const provider = uppiesContract.runner.provider
     const signer = uppiesContract.runner
     const uppie = await getUppieFromForm({ provider })
 
-    const allowanceTx = await setAllowance({ event, uppiesContract, signer })
-    const tx = uppiesContract.createUppie(uppie)
-    console.log({ tx: (await tx).hash })
-    postTxLinkUi((await tx).hash)
+    const canWithdraw = document.getElementById("canWithdrawInput").checked
+    const canBorrow = document.getElementById("canBorrowInput").checked
+    if(canWithdraw) {
+        setATokenAllowance({uppiesContract, signer }).then(async (tx)=>await postTxLinkUi(tx.hash,true))
+    }
+    if(canBorrow) {
+        setCreditDelegation({uppiesContract, signer,aavePoolInstance}).then(async (tx)=> await postTxLinkUi(tx.hash,true))
+    }
+
+    uppiesContract.createUppie(uppie).then(async (tx)=> await postTxLinkUi(tx.hash,true))
 }
+/**
+ * 
+ * @param {*} param0 
+ * @returns {Promise<ethers.Transaction} tx
+ */
+async function setATokenAllowance({ event, uppiesContract, signer, allowLowering = false }) {
+    const AToken = getAToken({runner:signer})
+    const decimals = await AToken.decimals()
 
-async function setAllowance({ event, uppiesContract, signer, allowLowering = false }) {
-    console.log({ signer })
-    const provider = uppiesContract.runner.provider
-    const aaveTokenAddress = document.getElementById("aaveTokenInput").value
-    const aaveTokenContract = new ethers.Contract(aaveTokenAddress, ATokenABI, signer)
-    const decimals = await aaveTokenContract.decimals()
-    console.log({ decimals })
-    aaveTokenContract.connect(signer)
-    const allowanceUi = ethers.parseUnits(document.getElementById("aaveTokenPermissionInput").value, await aaveTokenContract.decimals())
-    const allowanceChain = await aaveTokenContract.allowance(signer.address, CONTRACT_ADDRESS)
+    const allowanceUi = ethers.parseUnits(document.getElementById("aaveTokenPermissionInput").value, decimals)
+    const allowanceChain = await AToken.allowance(signer.address, uppiesContract.target)
     if (allowanceUi > allowanceChain || allowLowering) {
-        const tx = aaveTokenContract.approve(CONTRACT_ADDRESS, allowanceUi)
-        postTxLinkUi((await tx).hash)
+        const tx = await AToken.approve(uppiesContract.target,allowanceUi)
         return tx
-
     }
 }
 
-
 /**
  * 
- * @param {{ event, uppiesContract, signer, allowLowering,aavePoolInstance:import('../types/ethers-contracts/interfaces/aave/IPool').IPool }} param0 
- * @returns 
+ * @param {*} param0 
+ * @returns {Promise<ethers.Transaction} tx
  */
-async function setDelegation({ event, uppiesContract, signer, allowLowering = false,aavePoolInstance  }) {
-    aavePoolInstance.deb
-    console.log({ signer })
-    const provider = uppiesContract.runner.provider
-    const aaveTokenAddress = document.getElementById("aaveTokenInput").value
-    const aaveTokenContract = IAToken__factory.connect(aaveTokenAddress, provider)
-    const underlyingTokenAddress = await aaveTokenContract.UNDERLYING_ASSET_ADDRESS()
-    const aaveDebtTokenAddress = await aavePoolInstance.getReserveVariableDebtToken(underlyingTokenAddress)
-    const aaveDebtToken = ICreditDelegationToken__factory.connect(aaveDebtTokenAddress, signer)
-    const decimals = await aaveTokenContract.decimals()
+async function setCreditDelegation({ event, uppiesContract, signer,aavePoolInstance, allowLowering = false }) {
+    const debtToken = await getDebtToken({aavePoolInstance, runner:signer})
+    const decimals = await debtToken.decimals()
 
-    console.log({signer})
-    aaveDebtToken.connect(signer)
-    const allowanceUi = ethers.parseUnits(document.getElementById("aaveDelegationInput").value, await aaveTokenContract.decimals())
-    const allowanceChain = await aaveDebtToken.borrowAllowance(signer.address, CONTRACT_ADDRESS)
+    const allowanceUi = ethers.parseUnits(document.getElementById("aaveDelegationInput").value, decimals)
+    const allowanceChain = await debtToken.borrowAllowance(signer.address, uppiesContract.target)
     if (allowanceUi > allowanceChain || allowLowering) {
-        const tx = aaveDebtToken.approveDelegation(CONTRACT_ADDRESS, allowanceUi)
-        postTxLinkUi((await tx).hash)
+        const tx = await debtToken.approveDelegation(uppiesContract.target,allowanceUi)
         return tx
-
     }
 }
 
 async function canBorrowInputHandler({ event, signer, provider, uppiesContract }) {
-    const isChecked = event.target.checked
+    const isChecked = document.getElementById("canBorrowInput")
     console.log({ isChecked })
     const showOnCanBorrowDivs = [...document.getElementsByClassName("showOnCanBorrow")]
     if (isChecked) {
@@ -551,6 +582,7 @@ async function main() {
     // addresses
     document.getElementById("recipientAccountInput").addEventListener("keyup", ((event) => validUppieFormCheck({ uppiesContract })))
     document.getElementById("underlyingTokenInput").addEventListener("keyup", ((event) => underlyingTokenInputHandler({ event, signer, provider, aavePoolInstance, uppiesContract })))
+    document.getElementById("maxDebtInput").addEventListener("keyup", ((event) => validUppieFormCheck({ uppiesContract })))
     // document.getElementById("payeeInput").addEventListener("keyup", ((event) => validUppieCheck())) // not editable
 
 
@@ -567,14 +599,14 @@ async function main() {
     document.getElementById("fillerRewardInput").addEventListener("keyup", ((event) => validUppieFormCheck({ uppiesContract })))
 
     // permissions
-    document.getElementById("aaveTokenPermissionBtn").addEventListener("click", async (event) => setAllowance({ event, uppiesContract, signer, allowLowering: true }))
-    document.getElementById("aaveDelegationBtn").addEventListener("click", async (event) => setDelegation({ event, uppiesContract, signer, allowLowering: true ,aavePoolInstance}))
+    document.getElementById("aaveTokenPermissionBtn").addEventListener("click", async (event) => setATokenAllowance({ event, uppiesContract, signer, allowLowering: true }))
+    document.getElementById("aaveDelegationBtn").addEventListener("click", async (event) => setCreditDelegation({ event, uppiesContract, signer,aavePoolInstance, allowLowering: true}))
 
     // token
     document.getElementById("aaveTokenInput").addEventListener("keyup", ((event) => aaveTokenInputHandler({ event, signer, provider, uppiesContract, aavePoolInstance })))
 
     // buttons
-    document.getElementById("createUppie").addEventListener("click", (event) => createUppieHandler({ event, uppiesContract }))
+    document.getElementById("createUppie").addEventListener("click", (event) => createUppieHandler({ event, uppiesContract,aavePoolInstance }))
 }
 
 await main()

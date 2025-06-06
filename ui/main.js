@@ -17,7 +17,7 @@ const defaultUppie = {
     canWithdraw: true,
     canBorrow: false,
     topUpTarget: undefined,
-    recipient: "0xe1faDc36322d8ba0Dd766BF62cafc3E6e6e70B47",
+    recipient: undefined,
     underlyingToken: "0xcB444e90D8198415266c6a2724b7900fb12FC56E",
     payee: "0xe1faDc36322d8ba0Dd766BF62cafc3E6e6e70B47",
     maxDebt: undefined,
@@ -86,19 +86,58 @@ async function postTxLinkUi(hash, add = false) {
 }
 
 async function removeUppieHandler({ index, uppiesContract }) {
-    console.log({ index })
+    console.log("removing: ", { index })
     const tx = await uppiesContract.removeUppie(index)
     postTxLinkUi(tx.hash)
 }
 
-async function editUppieBtnUppieHandler(params) {
-    // hide create u
+async function makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie, index}) {
+    const editUppieForm = document.getElementById("createNewUppie").cloneNode(true)
+    editUppieForm.id = ""
+    const editTitle = document.createElement("h3")
+    editTitle.innerText = `edit uppie ${index}`
+    editUppieForm.prepend(editTitle)
+    await initializeUppieForm({ form:editUppieForm, signer, provider, uppiesContract, aavePoolInstance, uppie, uppieIndex:index, type:"edit"})
+    const editUppieBtn = editUppieForm.getElementsByClassName("createUppie")[0]
+    editUppieBtn.innerText = "edit uppie"
+    editUppieForm.hidden = true
+    return editUppieForm
+    
+}
+
+/**
+ * 
+ * @param {{event, uppiesContract:UppiesContract,aavePoolInstance:import('../types/ethers-contracts/interfaces/aave/IPool').IPoolInterface}} param0 
+ */
+async function editUppieHandler({ event, uppiesContract, aavePoolInstance, index, form }) {
+    const provider = uppiesContract.runner.provider
+    const signer = uppiesContract.runner
+    const uppie = await getUppieFromForm({ provider, form })
+
+    const canWithdraw = form.getElementsByClassName("canWithdrawInput")[0].checked
+    const canBorrow = form.getElementsByClassName("canBorrowInput")[0].checked
+    if (canWithdraw) {
+        setATokenAllowance({ uppiesContract, signer, form }).then(async (tx) => tx ? await postTxLinkUi(tx.hash, true) : false)
+    }
+    if (canBorrow) {
+        setCreditDelegation({ uppiesContract, signer, aavePoolInstance, form }).then(async (tx) => tx ? await postTxLinkUi(tx.hash, true) : false)
+    }
+
+    uppiesContract.editUppie(uppie, index).then(async (tx) => await postTxLinkUi(tx.hash, true))
+}
+
+function showEditUppieHandler({form}) {
+    if(form.hidden) {
+        form.hidden = false
+    } else {
+        form.hidden = true
+    }
 }
 /**
  * 
  * @param {{ address, uppiesContract:UppiesContract }} param0 
  */
-async function listAllUppies({ address, uppiesContract }) {
+async function listAllUppies({ address, uppiesContract,aavePoolInstance }) {
     const provider = uppiesContract.runner.provider
     const allUppies = await getAllUppies({ address, uppiesContract })
     console.log({ allUppies })
@@ -111,19 +150,20 @@ async function listAllUppies({ address, uppiesContract }) {
         const uppieLi = document.createElement("li")
         const underlyingToken = await getTokenInfo({ address: uppie.underlyingToken, provider: provider })
         // TODO edit button
-        uppieLi.innerText = `
+        uppieLi.innerText = ` Uppie: ${uppie.index}
         recipient: ${uppie.recipient} 
-        threshold: ${ethers.formatUnits(uppie.topUpThreshold, underlyingToken.decimals)} ${underlyingToken.symbol}
-        target:${ethers.formatUnits(uppie.topUpTarget, underlyingToken.decimals)}  ${underlyingToken.symbol}
-        token:  ${underlyingToken.name}
+        target balance: ${ethers.formatUnits(uppie.topUpTarget, underlyingToken.decimals)}  ${underlyingToken.symbol}
+        token: ${underlyingToken.name}
         `
         const removeUppieBtn = document.createElement("button")
         const editUppieBtn = document.createElement("button")
         removeUppieBtn.innerText = "remove"
-        editUppieBtn.innerText = "edit TODO"
+        editUppieBtn.innerText = "edit"
         removeUppieBtn.addEventListener("click", (event) => removeUppieHandler({ index: uppie.index, uppiesContract }))
-        editUppieBtn.addEventListener("click", (event) => editUppieBtnUppieHandler({ index: uppie.index, uppiesContract }))
-        uppieLi.append(removeUppieBtn, editUppieBtn)
+        const editUppieForm = await makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie, index})
+        editUppieBtn.addEventListener("click", (event) => showEditUppieHandler({form:editUppieForm }))
+
+        uppieLi.append(removeUppieBtn, editUppieBtn,editUppieForm)
         existingUppiesUl.appendChild(uppieLi)
     }
 
@@ -132,7 +172,6 @@ window.listAllUppies = listAllUppies
 
 
 async function showAdvancedBtnHandler({ uppiesContract, form }) {
-    console.log("ADVANCED CLICKED")
     const advancedOptionsEl = form.getElementsByClassName("advancedOptions")[0]
     if (advancedOptionsEl.hidden) {
         advancedOptionsEl.hidden = false
@@ -147,12 +186,11 @@ async function showAdvancedBtnHandler({ uppiesContract, form }) {
 function topUpThresholdInputHandler({ event, uppiesContract, form }) {
     const topUpTargetEl = form.getElementsByClassName("topUpTargetInput")[0]
     const topUpThresholdEl = form.getElementsByClassName("topUpThresholdInput")[0]
-    console.log(Number(topUpTargetEl.value), Number(topUpThresholdEl.value))
     if (Number(topUpTargetEl.value) < Number(topUpThresholdEl.value)) {
         topUpTargetEl.value = topUpThresholdEl.value
-        setClassWithEvent("topUpTarget", event)
+        setClassWithEvent("topUpTarget", event, form)
     }
-    setClassWithEvent("topUpThreshold", event)
+    setClassWithEvent("topUpThreshold", event, form)
 
     if (form.getElementsByClassName("advancedOptions")[0].hidden) {
         const permissionSuggestion = (Number(topUpTargetEl.value) * 20).toString()
@@ -166,12 +204,11 @@ async function topUpTargetInputHandler({ event, provider, uppiesContract, form }
     const topUpTargetEl = form.getElementsByClassName("topUpTargetInput")[0]
     const topUpThresholdEl = form.getElementsByClassName("topUpThresholdInput")[0]
     const advancedOptionsEl = form.getElementsByClassName("advancedOptions")[0]
-    //console.log(Number(topUpTargetEl.value), Number(topUpThresholdEl.value) )
     if (advancedOptionsEl.hidden || Number(topUpTargetEl.value) < Number(topUpThresholdEl.value)) {
         topUpThresholdEl.value = topUpTargetEl.value
-        setClassWithEvent("topUpThreshold", event)
+        setClassWithEvent("topUpThreshold", event,form)
     }
-    setClassWithEvent("topUpTarget", event)
+    setClassWithEvent("topUpTarget", event, form)
     if (form.getElementsByClassName("advancedOptions")[0].hidden) {
         const permissionSuggestion = (Number(topUpTargetEl.value) * 20).toString()
         form.getElementsByClassName("aaveTokenPermissionInput")[0].value = permissionSuggestion
@@ -181,8 +218,8 @@ async function topUpTargetInputHandler({ event, provider, uppiesContract, form }
     validUppieFormCheck({ uppiesContract, form })
 }
 
-function setClassWithEvent(classname, event) {
-    setClass({ classname, value: event.target.value })
+function setClassWithEvent(classname, event, rootEl=undefined) {
+    setClass({ classname, value: event.target.value, rootEl })
 }
 
 async function switchNetwork(network, provider) {
@@ -214,8 +251,9 @@ async function getUppiesWithSigner({ chain = CHAININFO, contractAddress = CONTRA
 
 }
 
-function setClass({ classname, value }) {
-    for (const element of document.getElementsByClassName(classname)) {
+function setClass({ classname, value, rootEl=undefined }) {
+    rootEl = rootEl ? rootEl : document
+    for (const element of rootEl.getElementsByClassName(classname)) {
         element.innerText = value
     }
 }
@@ -247,7 +285,6 @@ async function aaveTokenInputHandler({ signer, provider, uppiesContract, aavePoo
         underlyingTokenAddress = await getUnderlyingToken({ aaveTokenContract })
         const aaveDebtToken = await aavePoolInstance.getReserveVariableDebtToken(underlyingTokenAddress)
         const debtToken = ICreditDelegationToken__factory.connect(aaveDebtToken, provider)
-        console.log({ underlyingTokenAddress })
         isValidInput = Boolean(underlyingTokenAddress)
         if (isValidInput) {
             const underlyingToken = getTokenInfo({ address: (await underlyingTokenAddress), provider })
@@ -258,17 +295,17 @@ async function aaveTokenInputHandler({ signer, provider, uppiesContract, aavePoo
             form.getElementsByClassName("currentDelegation")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveToken).decimals) * 10000) / 10000
 
             form.getElementsByClassName("underlyingTokenInput")[0].value = await underlyingTokenAddress
-            setClass({ classname: "underlyingTokenName", value: (await underlyingToken).name })
-            setClass({ classname: "underlyingTokenSymbol", value: (await underlyingToken).symbol })
-            setClass({ classname: "aaveTokenName", value: (await aaveToken).name })
-            setClass({ classname: "aaveTokenSymbol", value: (await aaveToken).symbol })
+            setClass({ classname: "underlyingTokenName", value: (await underlyingToken).name, rootEl:form })
+            setClass({ classname: "underlyingTokenSymbol", value: (await underlyingToken).symbol, rootEl:form })
+            setClass({ classname: "aaveTokenName", value: (await aaveToken).name, rootEl:form })
+            setClass({ classname: "aaveTokenSymbol", value: (await aaveToken).symbol, rootEl:form })
 
             window.decimals = aaveTokenContract.decimals()
         } else {
             form.getElementsByClassName("underlyingTokenInput")[0].value = ""
-            setClass({ classname: "underlyingTokenName", value: "" })
-            setClass({ classname: "underlyingTokenSymbol", value: "" })
-            setClass({ classname: "aaveTokenName", value: "" })
+            setClass({ classname: "underlyingTokenName", value: "", rootEl:form })
+            setClass({ classname: "underlyingTokenSymbol", value: "", rootEl:form })
+            setClass({ classname: "aaveTokenName", value: "", rootEl:form })
         }
         validUppieFormCheck({ uppiesContract, form })
     }
@@ -303,12 +340,12 @@ async function underlyingTokenInputHandler({ signer, provider, aavePoolInstance,
     } else {
         underlyingTokenInput.value = underlyingTokenAddress
     }
+    console.log({underlyingTokenAddress})
 
     let isValidInput;
     let aaveTokenAddress;
     if (ethers.isAddress(underlyingTokenAddress)) {
         aaveTokenAddress = await getReserveAToken({ underlyingTokenAddress, aavePoolInstance })
-        console.log({ aaveTokenAddress })
         isValidInput = Boolean(aaveTokenAddress)
     }
     if (isValidInput) {
@@ -322,14 +359,13 @@ async function underlyingTokenInputHandler({ signer, provider, aavePoolInstance,
 
         const currentAaveTokenDelegation = debtTokenContract.borrowAllowance(signer.address, uppiesContract.target)
         form.getElementsByClassName("currentAllowance")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveTokenInfo).decimals) * 10000) / 10000
-        console.log({ currentAaveTokenDelegation: await currentAaveTokenDelegation })
         form.getElementsByClassName("currentDelegation")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveDebtTokenInfo).decimals) * 10000) / 10000
 
         form.getElementsByClassName("aaveTokenInput")[0].value = await aaveTokenAddress
-        setClass({ classname: "underlyingTokenName", value: (await underlyingTokenInfo).name })
-        setClass({ classname: "underlyingTokenSymbol", value: (await underlyingTokenInfo).symbol })
-        setClass({ classname: "aaveTokenName", value: (await aaveTokenInfo).name })
-        setClass({ classname: "aaveTokenSymbol", value: (await aaveTokenInfo).symbol })
+        setClass({ classname: "underlyingTokenName", value: (await underlyingTokenInfo).name, rootEl:form })
+        setClass({ classname: "underlyingTokenSymbol", value: (await underlyingTokenInfo).symbol, rootEl:form })
+        setClass({ classname: "aaveTokenName", value: (await aaveTokenInfo).name, rootEl:form })
+        setClass({ classname: "aaveTokenSymbol", value: (await aaveTokenInfo).symbol, rootEl:form })
 
         await setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress, form })
 
@@ -338,9 +374,9 @@ async function underlyingTokenInputHandler({ signer, provider, aavePoolInstance,
 
     } else {
         form.getElementsByClassName("underlyingTokenInput")[0].value = ""
-        setClass({ classname: "underlyingTokenName", value: "" })
-        setClass({ classname: "underlyingTokenSymbol", value: "" })
-        setClass({ classname: "aaveTokenName", value: "" })
+        setClass({ classname: "underlyingTokenName", value: "", rootEl:form })
+        setClass({ classname: "underlyingTokenSymbol", value: "", rootEl:form })
+        setClass({ classname: "aaveTokenName", value: "", rootEl:form })
     }
 
     validUppieFormCheck({ uppiesContract, form })
@@ -389,7 +425,7 @@ async function getUppieFromForm({ provider, form }) {
     // not needed
     delete uppie.aaveDelegation
     delete uppie.aaveTokenPermission
-    console.log({ uppie })
+    console.log("got uppie from form: ",{ uppie })
     return uppie
 }
 window.getUppieFromForm = getUppieFromForm
@@ -435,6 +471,7 @@ async function createUppieHandler({ event, uppiesContract, aavePoolInstance, for
 
     uppiesContract.createUppie(uppie).then(async (tx) => await postTxLinkUi(tx.hash, true))
 }
+
 /**
  * 
  * @param {*} param0 
@@ -469,8 +506,14 @@ async function setCreditDelegation({ event, uppiesContract, signer, aavePoolInst
     }
 }
 
-async function canBorrowInputHandler({ event, signer, provider, form, uppiesContract, setHealthFactor = true }) {
-    const isChecked = form.getElementsByClassName("canBorrowInput")[0].checked
+async function canBorrowInputHandler({ event, signer, provider, form, uppiesContract, setHealthFactor = true , isChecked=undefined}) {
+    const canBorrowInput = form.getElementsByClassName("canBorrowInput")[0]
+    if (isChecked!==undefined) {
+        canBorrowInput.checked = isChecked
+    } else {
+        isChecked = canBorrowInput.checked
+    }
+
     const showOnCanBorrowDivs = [...form.getElementsByClassName("showOnCanBorrow")]
     if (isChecked) {
         showOnCanBorrowDivs.forEach((e) => e.hidden = false)
@@ -484,8 +527,14 @@ async function canBorrowInputHandler({ event, signer, provider, form, uppiesCont
     await validUppieFormCheck({ uppiesContract, form })
 }
 
-async function canWithdrawInputHandler({ event, signer, provider, form, uppiesContract }) {
-    const isChecked = form.getElementsByClassName("canWithdrawInput")[0].checked
+async function canWithdrawInputHandler({  form, uppiesContract, isChecked=undefined }) {
+    const canWithdrawInput = form.getElementsByClassName("canWithdrawInput")[0]
+    if (isChecked!==undefined) {
+        canWithdrawInput.checked = isChecked
+    } else {
+        isChecked = canWithdrawInput.checked
+    }
+
     const showOnCanBorrowDivs = [...form.getElementsByClassName("showOnCanWithdraw")]
     if (isChecked) {
         showOnCanBorrowDivs.forEach((e) => e.hidden = false)
@@ -559,7 +608,6 @@ async function validUppieFormCheck({ uppiesContract, form }) {
     const underlyingTokenAddress = inputStatus.underlyingTokenInput.el.value
     const underlyingIsCollateral = ethers.isAddress(underlyingTokenAddress) ? await uppiesContract._isUsedAsCollateral(payee, underlyingTokenAddress) : false
     if (underlyingIsCollateral || inputStatus.canBorrowInput.el.checked) {
-        console.log({ underlyingIsCollateral, canBorrow: inputStatus.canBorrowInput.el.checked })
         runChecks(inputStatus, "minHealthFactorInput", [checkEmpty, checkZero, checkSmaller], 1.01)
     }
 
@@ -613,8 +661,8 @@ async function setValuesForm({ uppie, form, aavePoolInstance, uppiesContract, se
     const [{ underlyingTokenInfo, aaveTokenInfo, aaveDebtTokenInfo, debtToken }] = await Promise.all([
         underlyingTokenInputHandler({ underlyingTokenAddress: uppie.underlyingToken, signer, provider, aavePoolInstance, uppiesContract, form: form }),
         //aaveTokenInputHandler({aaveTokenAddress:uppie.aaveToken, signer, provider, uppiesContract, aavePoolInstance, form: form }),
-        canBorrowInputHandler({ event: { target: { checked: uppie.canBorrow } }, signer, provider, uppiesContract, form: form, setHealthFactor }),
-        canWithdrawInputHandler({ event: { target: { checked: uppie.canBorrow } }, signer, provider, uppiesContract, form: form }),
+        canBorrowInputHandler({ isChecked:uppie.canBorrow, signer, provider, uppiesContract, form: form, setHealthFactor }),
+        canWithdrawInputHandler({isChecked:uppie.canWithdraw, signer, provider, uppiesContract, form: form }),
     ])
 
     const feeSettings = uppie.gas ? uppie.gas : defaultUppie.gas
@@ -643,12 +691,13 @@ async function setValuesForm({ uppie, form, aavePoolInstance, uppiesContract, se
  * 
  * @param {{uppie:import('../scripts/uppie-lib').uppie}} param0 
  */
-async function initializeUppieForm({ form, signer, provider, uppiesContract, aavePoolInstance, uppie, setHealthFactor = true }) {
+async function initializeUppieForm({ form, signer, provider, uppiesContract, aavePoolInstance, uppie, setHealthFactor = true, uppieIndex, type }) {
+    console.log("init with", {uppie})
     // TODO get default values from an uppie 
     form.getElementsByClassName("payeeInput")[0].value = signer.address
-    setClass({ classname: "payeeInput", value: signer.address })
+    setClass({ classname: "payeeInput", value: signer.address, rootEl:form })
 
-    await setValuesForm({ uppie: defaultUppie, aavePoolInstance, uppiesContract, form, setHealthFactor:true })
+    await setValuesForm({ uppie: uppie, aavePoolInstance, uppiesContract, form, setHealthFactor:true })
     await validUppieFormCheck({ uppiesContract, form: form })
 
     // check boxes
@@ -665,7 +714,14 @@ async function initializeUppieForm({ form, signer, provider, uppiesContract, aav
 
     // --ADVANCED--
     form.getElementsByClassName("showAdvancedBtn")[0].addEventListener("click", ((event) => showAdvancedBtnHandler({ uppiesContract, form: form, form: form })))
-    form.getElementsByClassName("createUppie")[0].addEventListener("click", (event) => createUppieHandler({ event, uppiesContract, aavePoolInstance, form: form }))
+    const createUppieBtn = form.getElementsByClassName("createUppie")[0]
+    if(type==="edit") {
+        form.getElementsByClassName("createUppie")[0].addEventListener("click", (event) => editUppieHandler({ event, uppiesContract, aavePoolInstance, index:uppieIndex, form }))
+        createUppieBtn.innerText = "edit uppie"
+    } else {
+        form.getElementsByClassName("createUppie")[0].addEventListener("click", (event) => createUppieHandler({ event, uppiesContract, aavePoolInstance, form: form }))
+    }
+    
 
     // additional rules
     form.getElementsByClassName("minHealthFactorInput")[0].addEventListener("change", ((event) => validUppieFormCheck({ uppiesContract, form: form })))
@@ -688,8 +744,8 @@ async function main() {
     const { contract: uppiesContract, signer } = await getUppiesWithSigner()
     window.signer = signer
     const provider = signer.provider
-    listAllUppies({ address: signer.address, uppiesContract })
     const aavePoolInstance = IPool__factory.connect(await uppiesContract.aavePoolInstance(), provider)
+    listAllUppies({ address: signer.address, uppiesContract,aavePoolInstance })
     window.uppiesContract = uppiesContract
 
     // TODO automatically set filler reward for different token types to also be worth 0.001 eure

@@ -47,6 +47,7 @@
 </head>
 
 <body>
+    <script crossorigin type="module" src="./main.js"></script>
     <div id="content">
         <div class="title">
             <h1>Uppies</h1>
@@ -54,135 +55,132 @@
         </div>
         <div id="createNewUppie">
             <h2>Create new uppie</h2>
-            <script crossorigin type="module" src="./main.js"></script>
-            <form id="createUppieForm">
-                <input type="checkbox" id="canWithdrawInput" name="canWithdraw" checked>
-                <label for="canWithdrawInput">Withdraw</span></label>
-                <br>
+            <div id="createUppieForm">
+                <form>
+                    <input type="checkbox" class="canWithdrawInput" name="canWithdraw" checked>
+                    <label for="canWithdrawInput">Withdraw</span></label>
+                    <br>
 
-                <input type="checkbox" id="canBorrowInput" name="canBorrow">
-                <label for="canBorrowInput">Borrow</span></label>
-                <br>
+                    <input type="checkbox" class="canBorrowInput" name="canBorrow">
+                    <label for="canBorrowInput">Borrow</span></label>
+                    <br>
 
-                <label for="topUpTargetInput">target balance:</label>
-                <input type="number" id="topUpTargetInput" name="topUpTarget"><span
-                    class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
-                <br>
-
-                <label for="recipientAccountInput">recipient account:</label>
-                <input type="text" id="recipientAccountInput" name="recipient"><span>(ex your gnosis-pay safe)</span>
-                <br>
-
-                <label for="underlyingTokenInput">Token:</label>
-                <input type="text" id="underlyingTokenInput" name="underlyingToken"
-                    value="0xcB444e90D8198415266c6a2724b7900fb12FC56E">
-                <span class="underlyingTokenName">UNDERLYINGTOKENNAME</span>
-                <br>
-
-
-                <label for="payeeInput">Payee:</label>
-                <input type="text" id="payeeInput" name="payee" value="0x0" readonly disabled="disabled">
-                <span>(currently
-                    connected account)</span>
-                <br>
-
-                <div class="showOnCanBorrow" hidden>
-                    <label for="maxDebtInput">max debt:</label>
-                    <input type="number" id="maxDebtInput" name="maxDebt"><span
+                    <label for="topUpTargetInput">target balance:</label>
+                    <input type="number" class="topUpTargetInput" name="topUpTarget"><span
                         class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
                     <br>
 
-                </div>
-
-                <div id="advancedOptions" hidden>
-                    <br>
-                    <h2>advanced options</h2>
-
-                    <span class="bold">additional rules</span>
-                    <br>
-                    <label for="topUpThresholdInput">balance threshold:</label>
-                    <input type="number" id="topUpThresholdInput" name="topUpThreshold"><span
-                        class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span> <span> (when to top-up)</span>
+                    <label for="recipientAccountInput">recipient account:</label>
+                    <input type="text" class="recipientAccountInput" name="recipient"><span>(ex your gnosis-pay
+                        safe)</span>
                     <br>
 
-                    <label for="minHealthFactorInput">minHealthFactor:</label>
-                    <input type="number" id="minHealthFactorInput" name="minHealthFactor" step="0.1">
-                    <br>
-                    <br>
-
-                    <span class="bold">fee settings</span>
-                    <br>
-                    <label for="maxBaseFeeInput">maxBaseFee:</label>
-                    <input type="number" id="maxBaseFeeInput" name="maxBaseFee" value="30">
-                    <span>gwei</span>
+                    <label for="underlyingTokenInput">Token:</label>
+                    <input type="text" class="underlyingTokenInput" name="underlyingToken">
+                    <span class="underlyingTokenName">UNDERLYINGTOKENNAME</span>
                     <br>
 
-                    <label for="priorityFeeInput">priorityFee:</label>
-                    <input type="number" id="priorityFeeInput" name="priorityFee" value="0.01">
-                    <span>gwei</span>
-                    <br>
 
-                    <label for="fillerRewardInput">filler reward:</label>
-                    <input type="number" id="fillerRewardInput" name="fillerReward" value="0.001">
-                    <span class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
+                    <label for="payeeInput">Payee:</label>
+                    <input type="text" class="payeeInput" name="payee" readonly disabled="disabled">
+                    <span>(currently
+                        connected account)</span>
                     <br>
-                    <br>
-
-                    <span class="bold">permissions</span>
-                    <br>
-
-                    <div class="showOnCanWithdraw" hidden>
-                        <label for="aaveTokenPermissionInput">aave token permission:</label>
-                        <input type="number" id="aaveTokenPermissionInput" name="aaveTokenPermission"><button
-                            type="button" id="aaveTokenPermissionBtn">set</button>
-                        <br>
-                    </div>
 
                     <div class="showOnCanBorrow" hidden>
-                        <label for="aaveDelegationInput">aave token credit delegation:</label>
-                        <input type="number" id="aaveDelegationInput" name="aaveDelegation"><button type="button"
-                            id="aaveDelegationBtn">set</button>
-                        <br>
-                    </div>
-
-                    <div class="showOnCanWithdraw" hidden>
-                        <span>current allowance: <span id="currentAllowance"></span> <span
-                                class="aaveTokenSymbol">AAVESTOKENSYMBOL</span></span>
+                        <label for="maxDebtInput">max debt:</label>
+                        <input type="number" class="maxDebtInput" name="maxDebt"><span
+                            class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
                         <br>
 
                     </div>
 
-                    <div class="showOnCanBorrow" hidden>
-                        <span>current credit delegation: <span id="currentDelegation"></span> <span
-                                class="aaveTokenSymbol">AAVESTOKENSYMBOL</span></span>
+                    <div class="advancedOptions" hidden>
+                        <br>
+                        <h2>advanced options</h2>
+
+                        <span class="bold">additional rules</span>
+                        <br>
+                        <label for="topUpThresholdInput">balance threshold:</label>
+                        <input type="number" class="topUpThresholdInput" name="topUpThreshold"><span
+                            class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span> <span> (when to top-up)</span>
+                        <br>
+
+                        <label for="minHealthFactorInput">minHealthFactor:</label>
+                        <input type="number" class="minHealthFactorInput" name="minHealthFactor" step="0.1">
+                        <br>
+                        <br>
+
+                        <span class="bold">fee settings</span>
+                        <br>
+                        <label for="maxBaseFeeInput">maxBaseFee:</label>
+                        <input type="number" class="maxBaseFeeInput" name="maxBaseFee">
+                        <span>gwei</span>
+                        <br>
+
+                        <label for="priorityFeeInput">priorityFee:</label>
+                        <input type="number" class="priorityFeeInput" name="priorityFee">
+                        <span>gwei</span>
+                        <br>
+
+                        <label for="fillerRewardInput">filler reward:</label>
+                        <input type="number" class="fillerRewardInput" name="fillerReward">
+                        <span class="underlyingTokenSymbol">UNDERLYINGTOKENSYMBOL</span>
+                        <br>
+                        <br>
+
+                        <span class="bold">permissions</span>
+                        <br>
+
+                        <div class="showOnCanWithdraw" hidden>
+                            <label for="aaveTokenPermissionInput">aave token permission:</label>
+                            <input type="number" class="aaveTokenPermissionInput" name="aaveTokenPermission"><button
+                                type="button" class="aaveTokenPermissionBtn">set</button>
+                            <br>
+                        </div>
+
+                        <div class="showOnCanBorrow" hidden>
+                            <label for="aaveDelegationInput">aave token credit delegation:</label>
+                            <input type="number" class="aaveDelegationInput" name="aaveDelegation"><button type="button"
+                                class="aaveDelegationBtn">set</button>
+                            <br>
+                        </div>
+
+                        <div class="showOnCanWithdraw" hidden>
+                            <span>current allowance: <span class="currentAllowance"></span> <span
+                                    class="aaveTokenSymbol">AAVESTOKENSYMBOL</span></span>
+                            <br>
+
+                        </div>
+
+                        <div class="showOnCanBorrow" hidden>
+                            <span>current credit delegation: <span class="currentDelegation"></span> <span
+                                    class="aaveTokenSymbol">AAVESTOKENSYMBOL</span></span>
+                            <br>
+                        </div>
+
+                        <br>
+
+                        <span class="bold">token</span>
+                        <br>
+                        <label for="aaveTokenInput">aaveToken:</label>
+                        <input type="text" class="aaveTokenInput" name="aaveToken">
+                        <span class="aaveTokenName">AAVESTOKENNAME</span>
                         <br>
                     </div>
+                </form>
+                <button class="showAdvancedBtn">show advanced options</button>
+                <br>
 
-                    <br>
-
-                    <span class="bold">token</span>
-                    <br>
-                    <label for="aaveTokenInput">aaveToken:</label>
-                    <input type="text" id="aaveTokenInput" name="aaveToken"
-                        value="0xEdBC7449a9b594CA4E053D9737EC5Dc4CbCcBfb2">
-                    <span class="aaveTokenName">AAVESTOKENNAME</span>
-                    <br>
-                </div>
-
-
-            </form>
-            <button id="showAdvancedBtn">show advanced options</button>
-
-            <br>
-
-            <button id="createUppie">create uppie</button>
-            <br>
-            <br>
-
-            <div id="txlinks">
-
+                <button class="createUppie">create uppie</button>
+                <br>
             </div>
+
+
+            <br>
+
         </div>
+        <div id="txlinks"></div>
         <div id="existingUppies" hidden>
             <h2>all your uppies!!! </h1>
                 <ul id="existingUppiesUl">
@@ -190,6 +188,8 @@
                 </ul>
 
         </div>
+    </div>
+
 
     </div>
 

@@ -249,7 +249,7 @@ export async function getUppie({address, index, uppiesContract}) {
 /**
  * 
  * @param {{address:ethers.BytesLike, uppiesContract:UppiesContract}} param0 
- * @returns 
+ * @returns {Promise<syncedUppie[]>} uppies
  */
 export async function getAllUppies({address, uppiesContract, maxConcurrentCalls=20}) {
     const highestUppieIndex = await uppiesContract.nextUppieIndexPerUser(address)

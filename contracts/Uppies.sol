@@ -67,6 +67,7 @@ contract Uppies {
         address underlyingToken = IAToken(uppie.aaveToken).UNDERLYING_ASSET_ADDRESS();
         require(uppie.underlyingToken == underlyingToken, "the underlying token from uppie.underlyingToken doesn't match uppie.aaveToken" );
         require(!uppie.canBorrow || uppie.minHealthFactor >= 1, "cant set the minHealthFactor below 1 if borrowing is enabled");
+        require(uppie.canBorrow || uppie.canWithdraw, "canWithdraw and canWithdraw can't both be set to false");
 
         uint256 _nextUppieIndex = nextUppieIndexPerUser[payee];
         nextUppieIndexPerUser[payee] = _nextUppieIndex + 1;
@@ -88,6 +89,7 @@ contract Uppies {
         address underlyingToken = IAToken(uppie.aaveToken).UNDERLYING_ASSET_ADDRESS();
         require(uppie.underlyingToken == underlyingToken, "the underlying token from uppie.underlyingToken doesn't match uppie.aaveToken" );
         require(!uppie.canBorrow || uppie.minHealthFactor >= 1, "cant set the minHealthFactor below 1 if borrowing is enabled");
+        require(uppie.canBorrow || uppie.canWithdraw, "canWithdraw and canWithdraw can't both be set to false");
 
         uppiesPerUser[msg.sender][_uppiesIndex] = uppie;
         emit NewUppie(msg.sender, _uppiesIndex);
@@ -98,14 +100,17 @@ contract Uppies {
     /// @param _uppiesIndex index of the uppie to remove
     function removeUppie(uint256 _uppiesIndex) public {
         uint256 _nextUppieIndex = nextUppieIndexPerUser[msg.sender];
-        require(_nextUppieIndex > _uppiesIndex, "cant edit uppie that doesn't exist");
+        require(_nextUppieIndex > _uppiesIndex, "cant remove uppie outside of _nextUppieIndex");
+        address payee = msg.sender;
+        Uppie memory uppie = uppiesPerUser[payee][_uppiesIndex];
+        require(uppie.canBorrow || uppie.canWithdraw, "cant remove an uppie that doesn't exist");
 
         /// @custom:gasgolf can this be more efficient?
-        uppiesPerUser[msg.sender][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),false,false,0,0,0,0,UppieGasSettings(0,0,0,0));
+        uppiesPerUser[payee][_uppiesIndex] = Uppie(address(0x0),address(0x0),address(0x0),false,false,0,0,0,0,UppieGasSettings(0,0,0,0));
         if (_uppiesIndex == _nextUppieIndex - 1) {
-            nextUppieIndexPerUser[msg.sender] = _nextUppieIndex - 1;
+            nextUppieIndexPerUser[payee] = _nextUppieIndex - 1;
         }
-        emit RemovedUppie(msg.sender, _uppiesIndex);
+        emit RemovedUppie(payee, _uppiesIndex);
     }
 
     /// @notice fills an uppie either by withdrawing or borrowing.

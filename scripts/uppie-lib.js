@@ -38,6 +38,11 @@ function removeNumberKeys(o) {
     Object.keys(o).forEach((s) => { if (!Number.isNaN(Number(s))) { delete o[s] } })
 }
 
+/**
+ * 
+ * @param {{ chunksize: Number, filter:ethers.EventFilter, startBlock, endBlock, contract:ethers.Contract }} param0 
+ * @returns {ethers.EventLog}
+ */
 export async function queryEventInChunks({ chunksize = 20000, filter, startBlock, endBlock, contract }) {
     const provider = contract.runner.provider
     const lastBlock = endBlock ? endBlock : await provider.getBlockNumber("latest")
@@ -85,6 +90,7 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
 
     const newUppies = createEvents.map((event) => [event.args[0], event.args[1]]);
     const removedUppies = removeEvents.map((event) => [event.args[0], event.args[1]]);
+    console.log( {createEventsLen: createEvents.length, removeEventsLen: removeEvents.length ,createEvents:createEvents.map((e)=>e.eventName), removeEvents:removeEvents.map((e)=>e.eventName)})
 
 
     // TODO add blockNumber of the latest block a preSyncedUppie was read at. So we can skip those reads
@@ -95,6 +101,7 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
         const removeIndex = allUppiesArr.findIndex((uppie) => uppie.address === removedUppie[0] && uppie.index === removedUppie[1])
         allUppiesArr.splice(removeIndex, 1)
     }
+    console.log({allUppiesArr})
 
     const syncedUppiesPerUser = {}
     for (const uppies of allUppiesArr) {
@@ -118,6 +125,7 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
  * @returns 
  */
 export async function fillUppie({ uppie, uppiesContract, isSponsored = false }) {
+    console.log("filling uppie: ", {index:uppie.index, payee:uppie.payee, isSponsored})
     const tx = await (await uppiesContract.fillUppie(uppie.index, uppie.payee, isSponsored, { gasLimit: 600000 })).wait(1) // should be 373000 to is safer
     return tx
 }
@@ -217,7 +225,7 @@ export async function fillUppies({ uppies, uppiesContract, maxConcurrentCalls = 
     return allTxs.flat()
 }
 
-/** ["recipientAccount", "aaveToken", "underlyingToken", "topUpThreshold", "topUpTarget", "maxBaseFee", "minHealthFactor"]
+/** 
  * @param {{uppie:syncedUppie, uppiesContract:UppiesContract}} param0 
  * @returns 
  */
@@ -226,14 +234,49 @@ export async function isFillableUppie({ uppie, uppiesContract, isSponsored = fal
         await uppiesContract.fillUppie.estimateGas(uppie.index, uppie.payee, isSponsored)
         return true
     } catch (error) {
-        if (error.message.startsWith("VM Exception while processing transaction:")) {
+        if (error.message.startsWith("VM Exception while processing transaction:") || error.message.startsWith("missing revert data") || error.message.startsWith("execution reverted")) {
+            console.log({notFillableReason:error.message})
             return false
         } else {
-            throw new Error("Transaction simulation failed. Cant determine if it's a fillable uppie.", { cause: error });
+            console.log({message:error.message})
+            //throw new Error("Transaction simulation failed. Cant determine if it's a fillable uppie.", { cause: error });
+            console.error("Transaction simulation failed. Cant determine if it's a fillable uppie.", { cause: error });
         }
     }
-
 }
+function invertAaveOraclePrice(oraclePrice) {
+    // (1 / price) to invert the price. (ex eure/xDai -> xDai/eure) but 1*10000000000000000 because price is returned 10^8 to large so we need to do (10^(8*2) / price)
+    return 10000000000000000n / oraclePrice;
+}
+
+function convertWithAaveOraclePrice(amount, oraclePrice)  {
+    // aave oracle prices are 10^8 too large
+    return amount * oraclePrice / 100000000n;
+}
+
+
+/** 
+ * @typedef {{isFillable: boolean, isProfitable: boolean, expectedCostToken: BigInt, fillerExpectedRewardToken: BigInt, estimatedGas: BigInt, uppieEstimatedGas: BigInt}} profitInfo
+ * @param {{uppie:syncedUppie, uppiesContract:UppiesContract, aaveOracle:import("../types/ethers-contracts/Uppies.sol/IAaveOracle").IAaveOracle}} param0 
+ * @returns {Promise<profitInfo>}
+ */
+export async function estimateProfitFillUppie({ uppie, uppiesContract, isSponsored = false, aaveOracle }) {
+    try {
+        const estimatedGas = await uppiesContract.fillUppie.estimateGas(uppie.index, uppie.payee, isSponsored)
+        const underlyingTokenPrice =  invertAaveOraclePrice(await aaveOracle.getAssetPrice(uppie.underlyingToken))
+        const estimatedFeeData = await uppiesContract.runner.provider.getFeeData()
+        const baseFee = estimatedFeeData.gasPrice
+        const priorityFee = estimatedFeeData.maxPriorityFeePerGas
+        const uppieExpectedGasCostNative =  (uppie.gas.topUpGas * (baseFee + uppie.gas.priorityFee))
+        const fillerExpectedRewardToken = uppie.gas.fillerReward + convertWithAaveOraclePrice(uppieExpectedGasCostNative, underlyingTokenPrice)
+        const expectedCostToken = convertWithAaveOraclePrice(estimatedGas * (baseFee + priorityFee), underlyingTokenPrice)
+        const isProfitable = fillerExpectedRewardToken > expectedCostToken
+        return {isFillable: true, isProfitable, expectedCostToken, fillerExpectedRewardToken, estimatedGas, uppieEstimatedGas: uppie.gas.topUpGas}
+    } catch (error) {
+        return {isFillable: false, isProfitable:false}
+    }
+}
+
 
 /**
  * 

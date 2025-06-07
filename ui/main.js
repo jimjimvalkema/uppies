@@ -4,10 +4,11 @@ window.ethers = ethers
 import { Uppies__factory } from '../types/ethers-contracts/factories/Uppies.sol/Uppies__factory';
 import erc20Abi from "./erc20ABI.json"
 import ATokenABI from "./ATokenABI.json"
-import { getAllUppies } from '../scripts/uppie-lib';
+import { estimateProfitFillUppie, getAllUppies, isFillableUppie } from '../scripts/uppie-lib';
 import { IAToken__factory } from '../types/ethers-contracts/factories/interfaces/aave/IAToken__factory';
 import { IPool__factory } from '../types/ethers-contracts/factories/interfaces/aave/IPool__factory';
 import { ICreditDelegationToken__factory } from '../types/ethers-contracts/factories/interfaces/aave/ICreditDelegationToken__factory';
+import { IAaveOracle__factory } from '../types/ethers-contracts/factories/Uppies.sol/IAaveOracle__factory';
 window.getAllUppies = getAllUppies
 
 /**
@@ -28,7 +29,7 @@ const defaultUppie = {
         maxBaseFee: 30000000000n,
         priorityFee: 10000000n,
         fillerReward: 1000000000000000n,
-        topUpGas: 474336n
+        topUpGas: 449152n
     }
 }
 
@@ -126,18 +127,20 @@ async function editUppieHandler({ event, uppiesContract, aavePoolInstance, index
     uppiesContract.editUppie(uppie, index).then(async (tx) => await postTxLinkUi(tx.hash, true))
 }
 
-function showEditUppieHandler({form}) {
+function showEditUppieHandler({form, editUppieBtn}) {
     if(form.hidden) {
         form.hidden = false
+        editUppieBtn.innerText = "hide edit"
     } else {
         form.hidden = true
+        editUppieBtn.innerText = "show edit"
     }
 }
 /**
  * 
  * @param {{ address, uppiesContract:UppiesContract }} param0 
  */
-async function listAllUppies({ address, uppiesContract,aavePoolInstance }) {
+async function listAllUppies({ address, uppiesContract,aavePoolInstance,aaveOracle }) {
     const provider = uppiesContract.runner.provider
     const allUppies = await getAllUppies({ address, uppiesContract })
     console.log({ allUppies })
@@ -147,6 +150,8 @@ async function listAllUppies({ address, uppiesContract,aavePoolInstance }) {
 
     const existingUppiesUl = document.getElementById("existingUppiesUl")
     for (const [index, uppie] of Object.entries(allUppies)) {
+        console.log({index:uppie.index},await estimateProfitFillUppie({uppie, uppiesContract, aaveOracle}))
+        
         const uppieLi = document.createElement("li")
         const underlyingToken = await getTokenInfo({ address: uppie.underlyingToken, provider: provider })
         // TODO edit button
@@ -154,29 +159,40 @@ async function listAllUppies({ address, uppiesContract,aavePoolInstance }) {
         recipient: ${uppie.recipient} 
         target balance: ${ethers.formatUnits(uppie.topUpTarget, underlyingToken.decimals)}  ${underlyingToken.symbol}
         token: ${underlyingToken.name}
+        can: ${[uppie.canWithdraw ? "withdraw" : false,uppie.canBorrow ? "borrow" : false].filter((v)=>v).toString()}
         `
         const removeUppieBtn = document.createElement("button")
         const editUppieBtn = document.createElement("button")
         removeUppieBtn.innerText = "remove"
-        editUppieBtn.innerText = "edit"
+        editUppieBtn.innerText = "show edit"
         removeUppieBtn.addEventListener("click", (event) => removeUppieHandler({ index: uppie.index, uppiesContract }))
         const editUppieForm = await makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie, index})
-        editUppieBtn.addEventListener("click", (event) => showEditUppieHandler({form:editUppieForm }))
-
+        editUppieBtn.addEventListener("click", (event) => showEditUppieHandler({form:editUppieForm, editUppieBtn }))
+       
+        const isFillable = await isFillableUppie({uppie, uppiesContract, isSponsored:true})
         uppieLi.append(removeUppieBtn, editUppieBtn,editUppieForm)
+        if (isFillable) {
+            const manualFillUppieBtn = document.createElement("button")
+            uppiesContract.connect(signer)
+            manualFillUppieBtn.addEventListener("click", async ()=> await uppiesContract.fillUppie(uppie.index, uppie.payee, false))
+            manualFillUppieBtn.innerText = "fill manually"
+            uppieLi.append(manualFillUppieBtn)
+        }
+        
         existingUppiesUl.appendChild(uppieLi)
     }
 
 }
-window.listAllUppies = listAllUppies
 
 
-async function showAdvancedBtnHandler({ uppiesContract, form }) {
+async function showAdvancedBtnHandler({ uppiesContract, form, advancedOptionsBtn }) {
     const advancedOptionsEl = form.getElementsByClassName("advancedOptions")[0]
     if (advancedOptionsEl.hidden) {
         advancedOptionsEl.hidden = false
+        advancedOptionsBtn.innerText = "hide advanced options"
     } else {
         advancedOptionsEl.hidden = true
+        advancedOptionsBtn.innerText = "show advanced options"
     }
     const underlyingTokenAddress = form.getElementsByClassName("underlyingTokenInput")[0].value
     await setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress, form })
@@ -200,15 +216,13 @@ function topUpThresholdInputHandler({ event, uppiesContract, form }) {
     validUppieFormCheck({ uppiesContract, form })
 }
 
-async function topUpTargetInputHandler({ event, provider, uppiesContract, form }) {
+async function topUpTargetInputHandler({ provider, uppiesContract, form }) {
     const topUpTargetEl = form.getElementsByClassName("topUpTargetInput")[0]
     const topUpThresholdEl = form.getElementsByClassName("topUpThresholdInput")[0]
     const advancedOptionsEl = form.getElementsByClassName("advancedOptions")[0]
     if (advancedOptionsEl.hidden || Number(topUpTargetEl.value) < Number(topUpThresholdEl.value)) {
         topUpThresholdEl.value = topUpTargetEl.value
-        setClassWithEvent("topUpThreshold", event,form)
     }
-    setClassWithEvent("topUpTarget", event, form)
     if (form.getElementsByClassName("advancedOptions")[0].hidden) {
         const permissionSuggestion = (Number(topUpTargetEl.value) * 20).toString()
         form.getElementsByClassName("aaveTokenPermissionInput")[0].value = permissionSuggestion
@@ -340,7 +354,6 @@ async function underlyingTokenInputHandler({ signer, provider, aavePoolInstance,
     } else {
         underlyingTokenInput.value = underlyingTokenAddress
     }
-    console.log({underlyingTokenAddress})
 
     let isValidInput;
     let aaveTokenAddress;
@@ -407,7 +420,7 @@ async function getUppieFromForm({ provider, form }) {
     const debtTokenInfo = await getTokenInfo({ address: uppie.underlyingToken, provider })
     uppie.topUpThreshold = ethers.parseUnits(uppie.topUpThreshold, underlyingTokenInfo.decimals)
     uppie.topUpTarget = ethers.parseUnits(uppie.topUpTarget, underlyingTokenInfo.decimals)
-    uppie.minHealthFactor = BigInt(Number(uppie.minHealthFactor) * 10 ** 18)
+    uppie.minHealthFactor = ethers.parseUnits(uppie.minHealthFactor, 18)//BigInt(Number(uppie.minHealthFactor) * 10 ** 18)
     uppie.maxDebt = uppie.maxDebt === "" ? 0n : ethers.parseUnits(uppie.maxDebt, debtTokenInfo.decimals)
 
     // move gasSettings
@@ -682,6 +695,8 @@ async function setValuesForm({ uppie, form, aavePoolInstance, uppiesContract, se
     maxDebtInput.value = uppie.maxDebt ? ethers.formatUnits(uppie.maxDebt, underlyingTokenInfo.decimals) : ""
     recipientAccountInput.value = uppie.recipient ? ethers.getAddress(uppie.recipient) : ""
 
+    await topUpTargetInputHandler({ uppiesContract, form })
+
 }
 
 
@@ -713,7 +728,8 @@ async function initializeUppieForm({ form, signer, provider, uppiesContract, aav
 
 
     // --ADVANCED--
-    form.getElementsByClassName("showAdvancedBtn")[0].addEventListener("click", ((event) => showAdvancedBtnHandler({ uppiesContract, form: form, form: form })))
+    const advancedOptionsBtn =  form.getElementsByClassName("showAdvancedBtn")[0]
+    advancedOptionsBtn.addEventListener("click", ((event) => showAdvancedBtnHandler({ uppiesContract, form: form, form: form, advancedOptionsBtn })))
     const createUppieBtn = form.getElementsByClassName("createUppie")[0]
     if(type==="edit") {
         form.getElementsByClassName("createUppie")[0].addEventListener("click", (event) => editUppieHandler({ event, uppiesContract, aavePoolInstance, index:uppieIndex, form }))
@@ -742,10 +758,16 @@ async function initializeUppieForm({ form, signer, provider, uppiesContract, aav
 
 async function main() {
     const { contract: uppiesContract, signer } = await getUppiesWithSigner()
+    const contractLink = document.getElementById("contractBlockExplorerLink")
+    contractLink.href = `https://gnosisscan.io/address/${uppiesContract.target}#code`
+    contractLink.innerText =`gnosisscan.io/address/${uppiesContract.target}`
     window.signer = signer
     const provider = signer.provider
     const aavePoolInstance = IPool__factory.connect(await uppiesContract.aavePoolInstance(), provider)
-    listAllUppies({ address: signer.address, uppiesContract,aavePoolInstance })
+    const aaveOracle = IAaveOracle__factory.connect(await uppiesContract.aaveOracle(), provider)
+    window.aaveOracle = aaveOracle
+    window.aavePoolInstance = aavePoolInstance
+    listAllUppies({ address: signer.address, uppiesContract,aavePoolInstance, aaveOracle })
     window.uppiesContract = uppiesContract
 
     // TODO automatically set filler reward for different token types to also be worth 0.001 eure

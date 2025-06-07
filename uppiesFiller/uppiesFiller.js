@@ -16,7 +16,7 @@ const parser = new ArgumentParser({
 });
 parser.add_argument('-pv', '--privateKey', {default: "0x00000000000000000000000000000000", help: 'privatekey for the account that fills the uppies', required: true });
 parser.add_argument('-p', '--provider', {default: "https://rpc.gnosischain.com", help: 'Provider url. Default uis mainnet. ex: mainnet: --provider=https://rpc.gnosischain.com or testnet: --provider=https://rpc.chiadochain.net', required: false });
-parser.add_argument('-c', '--contractAddress', {default: "0xF438b730996Ad8CF60B58881c5defa72535b8Dbf", help: 'contract address of the uppies contract', required: false });
+parser.add_argument('-c', '--contractAddress', {default: "0x41D41B606bE9c7Da574D07af900eF828f7496a9F", help: 'contract address of the uppies contract', required: false });
 
 const args = parser.parse_args()
 

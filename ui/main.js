@@ -44,7 +44,7 @@ window.createNewUppieInputsDiv = form
  * @typedef {import('../scripts/uppie-lib').UppiesContract} UppiesContract
  */
 
-const CONTRACT_ADDRESS = "0xF438b730996Ad8CF60B58881c5defa72535b8Dbf"
+const CONTRACT_ADDRESS = "0x41D41B606bE9c7Da574D07af900eF828f7496a9F"
 const TOP_UP_GAS = 474336n
 const CHAININFO = {
     chainId: "0x64",

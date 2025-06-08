@@ -34,14 +34,13 @@ import { IAaveOracle__factory } from "../types/ethers-contracts/factories/Uppies
 import { erc20Abi } from "viem"
 
 function removeNumberKeys(o) {
-    console.log({ o })
     Object.keys(o).forEach((s) => { if (!Number.isNaN(Number(s))) { delete o[s] } })
 }
 
 /**
  * 
  * @param {{ chunksize: Number, filter:ethers.EventFilter, startBlock, endBlock, contract:ethers.Contract }} param0 
- * @returns {ethers.EventLog}
+ * @returns {Promise<ethers.EventLog>}
  */
 export async function queryEventInChunks({ chunksize = 20000, filter, startBlock, endBlock, contract }) {
     const provider = contract.runner.provider
@@ -90,18 +89,15 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
 
     const newUppies = createEvents.map((event) => [event.args[0], event.args[1]]);
     const removedUppies = removeEvents.map((event) => [event.args[0], event.args[1]]);
-    console.log( {createEventsLen: createEvents.length, removeEventsLen: removeEvents.length ,createEvents:createEvents.map((e)=>e.eventName), removeEvents:removeEvents.map((e)=>e.eventName)})
-
 
     // TODO add blockNumber of the latest block a preSyncedUppie was read at. So we can skip those reads
     // make it a flat array of [[userAddress, uppiesIndex]]
     const preSyncedUppiesArr = Object.keys(preSyncedUppies).map((userAddress) => preSyncedUppies[userAddress].map((uppie) => [userAddress, uppie.index])).flat()
     const allUppiesArr = [...preSyncedUppiesArr, ...newUppies]
     for (const removedUppie of removedUppies) {
-        const removeIndex = allUppiesArr.findIndex((uppie) => uppie.address === removedUppie[0] && uppie.index === removedUppie[1])
-        allUppiesArr.splice(removeIndex, 1)
+        const removedIndex = allUppiesArr.findLastIndex((v) => v[0] === removedUppie[0] && v[1] === removedUppie[1])
+        allUppiesArr.splice(removedIndex, 1)
     }
-    console.log({allUppiesArr})
 
     const syncedUppiesPerUser = {}
     for (const uppies of allUppiesArr) {
@@ -109,10 +105,16 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
         const index = uppies[1]
         //const onchainUppieStruct = await uppiesContract.uppiesPerUser(address, index) //Object.fromEntries((await uppiesContract.uppiesPerUser(address, index)).map((item, index)=>[structNames[index], item]))
         const onchainUppieStruct = await getNamedStruct(uppiesContract, "uppiesPerUser", [address, index])
-        if (!(address in syncedUppiesPerUser)) {
-            syncedUppiesPerUser[address] = []
+        if (onchainUppieStruct.canBorrow && onchainUppieStruct.canWithdraw) {
+            if (!(address in syncedUppiesPerUser)) {
+                syncedUppiesPerUser[address] = []
+            }
+            syncedUppiesPerUser[address].push({ ...onchainUppieStruct, payee: address, index: index })
+
+        } else {
+            console.log("whoops", {payee:address, index})
         }
-        syncedUppiesPerUser[address][index] = { ...onchainUppieStruct, payee: address, index: index }
+
     }
 
     return syncedUppiesPerUser
@@ -125,7 +127,7 @@ export async function syncUppies({ preSyncedUppies = {}, chunksize = 20000, star
  * @returns 
  */
 export async function fillUppie({ uppie, uppiesContract, isSponsored = false }) {
-    console.log("filling uppie: ", {index:uppie.index, payee:uppie.payee, isSponsored})
+    console.log("filling uppie: ", { index: uppie.index, payee: uppie.payee, isSponsored })
     const tx = await (await uppiesContract.fillUppie(uppie.index, uppie.payee, isSponsored, { gasLimit: 600000 })).wait(1) // should be 373000 to is safer
     return tx
 }
@@ -133,7 +135,10 @@ export async function fillUppie({ uppie, uppiesContract, isSponsored = false }) 
  * @param {{uppie:syncedUppie, uppiesContract:import("../types/ethers-contracts/Uppies.sol/Uppies").Uppies}} param0 
  * @returns 
  */
-export async function debugUppie({ uppie, uppiesContract }) {
+export async function isFillableUppieNoSimulation({ uppie, uppiesContract }) {
+    if (uppie.canBorrow === false && uppie.canWithdraw === false) {
+        return false
+    }
     const provider = uppiesContract.runner.provider
     const underlyingTokenContract = new ethers.Contract(uppie.underlyingToken, erc20Abi, provider)
     const aaveTokenContract = IAToken__factory.connect(uppie.aaveToken, provider)
@@ -141,8 +146,12 @@ export async function debugUppie({ uppie, uppiesContract }) {
     const aavePoolContract = IPool__factory.connect(await uppiesContract.aavePoolInstance(), provider)
     const debtTokenAddress = await aavePoolContract.getReserveVariableDebtToken(uppie.underlyingToken)
     const debtToken = ICreditDelegationToken__factory.connect(debtTokenAddress, provider)
+    console.log("11111111111")
+    console.log(uppie.recipient, uppie)
     const recipientBalance = await underlyingTokenContract.balanceOf(uppie.recipient)
+    console.log("22222222222222")
     const payeeBalance = await aaveTokenContract.balanceOf(uppie.payee)
+    console.log("3333333333333333")
     const creditDelegation = await debtToken.borrowAllowance(uppie.payee, uppiesContract.target)
     const approval = await aaveTokenContract.allowance(uppie.payee, uppiesContract.target)
     const topUpSize = BigInt(uppie.topUpTarget) - recipientBalance
@@ -190,6 +199,7 @@ export async function debugUppie({ uppie, uppiesContract }) {
     })
     console.log(`\n----------------\n`)
     // TODO check that contract cant do topUpSize of zero!!
+    return shouldBeFillable
 
 }
 
@@ -231,14 +241,13 @@ export async function fillUppies({ uppies, uppiesContract, maxConcurrentCalls = 
  */
 export async function isFillableUppie({ uppie, uppiesContract, isSponsored = false }) {
     try {
-        await uppiesContract.fillUppie.estimateGas(uppie.index, uppie.payee, isSponsored)
+        const gas = await uppiesContract.fillUppie.estimateGas(uppie.index, uppie.payee, isSponsored)
         return true
     } catch (error) {
         if (error.message.startsWith("VM Exception while processing transaction:") || error.message.startsWith("missing revert data") || error.message.startsWith("execution reverted")) {
-            console.log({notFillableReason:error.message})
             return false
         } else {
-            console.log({message:error.message})
+            console.log({ message: error.message })
             //throw new Error("Transaction simulation failed. Cant determine if it's a fillable uppie.", { cause: error });
             console.error("Transaction simulation failed. Cant determine if it's a fillable uppie.", { cause: error });
         }
@@ -249,7 +258,7 @@ function invertAaveOraclePrice(oraclePrice) {
     return 10000000000000000n / oraclePrice;
 }
 
-function convertWithAaveOraclePrice(amount, oraclePrice)  {
+function convertWithAaveOraclePrice(amount, oraclePrice) {
     // aave oracle prices are 10^8 too large
     return amount * oraclePrice / 100000000n;
 }
@@ -263,17 +272,17 @@ function convertWithAaveOraclePrice(amount, oraclePrice)  {
 export async function estimateProfitFillUppie({ uppie, uppiesContract, isSponsored = false, aaveOracle }) {
     try {
         const estimatedGas = await uppiesContract.fillUppie.estimateGas(uppie.index, uppie.payee, isSponsored)
-        const underlyingTokenPrice =  invertAaveOraclePrice(await aaveOracle.getAssetPrice(uppie.underlyingToken))
+        const underlyingTokenPrice = invertAaveOraclePrice(await aaveOracle.getAssetPrice(uppie.underlyingToken))
         const estimatedFeeData = await uppiesContract.runner.provider.getFeeData()
         const baseFee = estimatedFeeData.gasPrice
         const priorityFee = estimatedFeeData.maxPriorityFeePerGas
-        const uppieExpectedGasCostNative =  (uppie.gas.topUpGas * (baseFee + uppie.gas.priorityFee))
+        const uppieExpectedGasCostNative = (uppie.gas.topUpGas * (baseFee + uppie.gas.priorityFee))
         const fillerExpectedRewardToken = uppie.gas.fillerReward + convertWithAaveOraclePrice(uppieExpectedGasCostNative, underlyingTokenPrice)
         const expectedCostToken = convertWithAaveOraclePrice(estimatedGas * (baseFee + priorityFee), underlyingTokenPrice)
         const isProfitable = fillerExpectedRewardToken > expectedCostToken
-        return {isFillable: true, isProfitable, expectedCostToken, fillerExpectedRewardToken, estimatedGas, uppieEstimatedGas: uppie.gas.topUpGas}
+        return { isFillable: true, isProfitable, expectedCostToken, fillerExpectedRewardToken, estimatedGas, uppieEstimatedGas: uppie.gas.topUpGas }
     } catch (error) {
-        return {isFillable: false, isProfitable:false}
+        return { isFillable: false, isProfitable: false }
     }
 }
 
@@ -283,10 +292,10 @@ export async function estimateProfitFillUppie({ uppie, uppiesContract, isSponsor
  * @param {{address:ethers.BytesLike, uppiesContract:UppiesContract}} param0 
  * @returns {syncedUppie} uppie
  */
-export async function getUppie({address, index, uppiesContract}) {
+export async function getUppie({ address, index, uppiesContract }) {
     const uppieFromChain = await getNamedStruct(uppiesContract, "uppiesPerUser", [address, index])
-    return {...uppieFromChain, payee:address, index}
-    
+    return { ...uppieFromChain, payee: address, index }
+
 }
 
 /**
@@ -294,17 +303,17 @@ export async function getUppie({address, index, uppiesContract}) {
  * @param {{address:ethers.BytesLike, uppiesContract:UppiesContract}} param0 
  * @returns {Promise<syncedUppie[]>} uppies
  */
-export async function getAllUppies({address, uppiesContract, maxConcurrentCalls=20}) {
+export async function getAllUppies({ address, uppiesContract, maxConcurrentCalls = 20 }) {
     const highestUppieIndex = await uppiesContract.nextUppieIndexPerUser(address)
     // TODO will break on high amounts if rpc is weak
-    const uppiesIndexes = new Array(Number(highestUppieIndex)).fill(0).map((v,i)=>i)
+    const uppiesIndexes = new Array(Number(highestUppieIndex)).fill(0).map((v, i) => i)
 
     const batches = Math.ceil(uppiesIndexes.length / maxConcurrentCalls)
     const uppies = []
     for (let index = 0; index < batches; index++) {
         const uppieIndexesBatch = uppiesIndexes.slice((index) * maxConcurrentCalls, (index + 1) * maxConcurrentCalls)
-        const uppieBatch = await Promise.all(uppieIndexesBatch.map((index)=>getUppie({address, index, uppiesContract})))
-        uppies.push(uppieBatch.filter((uppie)=> uppie.canBorrow || uppie.canWithdraw))
+        const uppieBatch = await Promise.all(uppieIndexesBatch.map((index) => getUppie({ address, index, uppiesContract })))
+        uppies.push(uppieBatch.filter((uppie) => uppie.canBorrow || uppie.canWithdraw))
     }
     return uppies.flat()
 }    

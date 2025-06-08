@@ -14,7 +14,7 @@ deployment: https://gnosisscan.io/address/0x41D41B606bE9c7Da574D07af900eF828f749
 
 Uppie filler
 ```shell
-node uppiesFiller/uppiesFiller.js --privateKey 0xPRIVATEKEY
+yarn bun run uppiesFiller/uppiesFiller.js --privateKey 0xPRIVATEKEY
 ```
 
 ui

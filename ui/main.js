@@ -11,6 +11,15 @@ import { ICreditDelegationToken__factory } from '../types/ethers-contracts/facto
 import { IAaveOracle__factory } from '../types/ethers-contracts/factories/Uppies.sol/IAaveOracle__factory';
 window.getAllUppies = getAllUppies
 
+
+function roundNumber(num, decimals = 0) {
+    const factor = Math.pow(10, decimals);
+    const rounded = Math.round(num * factor) / factor;
+    return rounded.toFixed(decimals);
+}
+
+// TODO show warning if allowance is low
+// TODO current credit delegation: shows a token ticker instead of underlying
 /**
  * @typedef {defaultUppie:syncedUppie} defaultUppie
  */
@@ -60,7 +69,7 @@ const CHAININFO = {
 
 
 /**
- * @typedef {{ symbol: bigint, name: bigint, decimals: bigint }} tokenInfo
+ * @typedef {{ symbol: bigint, name: bigint, decimals: bigint, contract }} tokenInfo
  * @param {*} param0 
  * @returns {Promise<tokenInfo>}
  */
@@ -69,7 +78,7 @@ async function getTokenInfo({ address, provider, contractObj }) {
     const symbol = contract.symbol()
     const name = contract.name()
     const decimals = contract.decimals()
-    return { symbol: await symbol, name: await name, decimals: await decimals }
+    return { symbol: await symbol, name: await name, decimals: await decimals, contract }
 
 }
 
@@ -138,9 +147,55 @@ function showEditUppieHandler({form, editUppieBtn}) {
 }
 /**
  * 
+ * @param {{tokenInfo:tokenInfo}} param0 
+ */
+async function makePermissionInput({symbol, tokenInfo, readPermissionFuncName, permissionFuncName, inputText, uppie, uppiesContract}) {
+    //borrowAllowance
+    const allowance = await tokenInfo.contract[readPermissionFuncName](uppie.payee, uppiesContract.target)
+    const formattedAllowance = roundNumber(ethers.formatUnits(allowance, tokenInfo.decimals),4)
+    const allowanceTooLow = uppie.topUpTarget*2n > allowance 
+
+    const aaveTokenAllowanceLabel = document.createElement("label")
+    aaveTokenAllowanceLabel.innerText = inputText
+    const aaveTokenAllowanceInput = document.createElement("input")
+    aaveTokenAllowanceInput.type = "number"
+    const aaveTokenAllowanceInputBtn = document.createElement("button")
+    aaveTokenAllowanceInputBtn.addEventListener("click", async ()=>{
+        const amount = ethers.parseUnits(aaveTokenAllowanceInput.value, tokenInfo.decimals)
+        await tokenInfo.contract[permissionFuncName](uppiesContract.target, amount)
+    })
+    aaveTokenAllowanceInputBtn.innerText = "set"
+    aaveTokenAllowanceLabel.append(aaveTokenAllowanceInput, aaveTokenAllowanceInputBtn)
+    aaveTokenAllowanceLabel.hidden = true
+
+    const currentAllowanceName = document.createElement("span")
+    currentAllowanceName.innerText = ` ${inputText} `
+    const currentAllowanceDisplay = document.createElement("span")
+    currentAllowanceDisplay.innerText = ` ${formattedAllowance} `
+    currentAllowanceDisplay.style.color = allowanceTooLow ? "#00ffff" : "black"
+    const currentAllowanceSymbol = document.createElement("span")
+    currentAllowanceSymbol.innerText = `${symbol} `
+    const editBtn = document.createElement("button")
+    editBtn.innerText = "edit"
+    editBtn.addEventListener("click",()=>{
+        if (aaveTokenAllowanceLabel.hidden) {
+            aaveTokenAllowanceLabel.hidden = false
+        } else {
+            aaveTokenAllowanceLabel.hidden = true
+        }
+    })
+
+    const div = document.createElement("div")
+    currentAllowanceName.innerText = inputText
+    div.append(currentAllowanceName,currentAllowanceDisplay,currentAllowanceSymbol,editBtn, document.createElement("br"), aaveTokenAllowanceLabel)
+    return div
+}
+
+/**
+ * 
  * @param {{ address, uppiesContract:UppiesContract }} param0 
  */
-async function listAllUppies({ address, uppiesContract,aavePoolInstance,aaveOracle }) {
+async function listAllUppies({ address, uppiesContract,aavePoolInstance,aaveOracle,signer }) {
     const provider = uppiesContract.runner.provider
     const allUppies = await getAllUppies({ address, uppiesContract })
     console.log({ allUppies })
@@ -154,8 +209,9 @@ async function listAllUppies({ address, uppiesContract,aavePoolInstance,aaveOrac
         
         const uppieLi = document.createElement("li")
         const underlyingToken = await getTokenInfo({ address: uppie.underlyingToken, provider: provider })
+        
         // TODO edit button
-        uppieLi.innerText = ` Uppie: ${uppie.index}
+        uppieLi.innerText = `Uppie: ${uppie.index}
         recipient: ${uppie.recipient} 
         target balance: ${ethers.formatUnits(uppie.topUpTarget, underlyingToken.decimals)}  ${underlyingToken.symbol}
         token: ${underlyingToken.name}
@@ -168,12 +224,24 @@ async function listAllUppies({ address, uppiesContract,aavePoolInstance,aaveOrac
         removeUppieBtn.addEventListener("click", (event) => removeUppieHandler({ index: uppie.index, uppiesContract }))
         const editUppieForm = await makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie, index})
         editUppieBtn.addEventListener("click", (event) => showEditUppieHandler({form:editUppieForm, editUppieBtn }))
+        if(uppie.canWithdraw) {
+            const aaveTokenInfo = await getTokenInfo({ address: uppie.aaveToken, provider: signer })
+            const div = await makePermissionInput({symbol:underlyingToken.symbol,tokenInfo:aaveTokenInfo, readPermissionFuncName:"allowance",permissionFuncName:"approve", inputText:"AToken allowance: ", uppie,uppiesContract})
+            uppieLi.append(div)
+        }
+
+        if(uppie.canBorrow) {
+            const debtTokenContract = await getDebtToken({aavePoolInstance,runner:signer,underlyingTokenAddress:uppie.underlyingToken})
+            const debtTokenInfo = await getTokenInfo({ address: uppie.aaveToken, provider: signer , contractObj:debtTokenContract})
+            const div = await makePermissionInput({symbol:underlyingToken.symbol,tokenInfo:debtTokenInfo, readPermissionFuncName:"borrowAllowance",permissionFuncName:"approveDelegation", inputText:"Borrow allowance: ", uppie,uppiesContract})
+            uppieLi.append(div)
+        }
        
         const isFillable = await isFillableUppie({uppie, uppiesContract, isSponsored:true})
         uppieLi.append(removeUppieBtn, editUppieBtn,editUppieForm)
         if (isFillable) {
+            uppiesContract = uppiesContract.connect(signer)
             const manualFillUppieBtn = document.createElement("button")
-            uppiesContract.connect(signer)
             manualFillUppieBtn.addEventListener("click", async ()=> await uppiesContract.fillUppie(uppie.index, uppie.payee, false))
             manualFillUppieBtn.innerText = "fill manually"
             uppieLi.append(manualFillUppieBtn)
@@ -194,8 +262,14 @@ async function showAdvancedBtnHandler({ uppiesContract, form, advancedOptionsBtn
         advancedOptionsEl.hidden = true
         advancedOptionsBtn.innerText = "show advanced options"
     }
-    const underlyingTokenAddress = form.getElementsByClassName("underlyingTokenInput")[0].value
-    await setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress, form })
+    // const underlyingTokenAddress = form.getElementsByClassName("underlyingTokenInput")[0].value
+    // const currentHealthFactor = form.getElementsByClassName("minHealthFactorInput")[0].value
+    // const canWithdraw = form.getElementsByClassName("canWithdrawInput")[0].checked
+    // const canBorrow = form.getElementsByClassName("canBorrowInput")[0].checked
+    // const healthIsSetToDefault = (currentHealthFactor === "1.1" && canBorrow) || (currentHealthFactor === "0" && canWithdraw)
+    // if (healthIsSetToDefault) {
+    //     await setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress, form })
+    // }
     validUppieFormCheck({ uppiesContract, form })
 }
 
@@ -305,8 +379,8 @@ async function aaveTokenInputHandler({ signer, provider, uppiesContract, aavePoo
             const aaveToken = getTokenInfo({ address: aaveTokenAddress, provider })
             const currentAaveTokenAllowance = aaveTokenContract.allowance(signer.address, CONTRACT_ADDRESS)
             const currentAaveTokenDelegation = debtToken.borrowAllowance(signer.address, uppiesContract.target)
-            form.getElementsByClassName("currentAllowance")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveToken).decimals) * 10000) / 10000
-            form.getElementsByClassName("currentDelegation")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveToken).decimals) * 10000) / 10000
+            form.getElementsByClassName("currentAllowance")[0].innerText = roundNumber(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveToken).decimals),4)//Math.round(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveToken).decimals) * 10000) / 10000
+            form.getElementsByClassName("currentDelegation")[0].innerText = roundNumber(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveToken).decimals),4)//Math.round(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveToken).decimals) * 10000) / 10000
 
             form.getElementsByClassName("underlyingTokenInput")[0].value = await underlyingTokenAddress
             setClass({ classname: "underlyingTokenName", value: (await underlyingToken).name, rootEl:form })
@@ -371,9 +445,8 @@ async function underlyingTokenInputHandler({ signer, provider, aavePoolInstance,
         const aaveDebtTokenInfo = getTokenInfo({ provider, contractObj:debtTokenContract })
 
         const currentAaveTokenDelegation = debtTokenContract.borrowAllowance(signer.address, uppiesContract.target)
-        form.getElementsByClassName("currentAllowance")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveTokenInfo).decimals) * 10000) / 10000
-        form.getElementsByClassName("currentDelegation")[0].innerText = Math.round(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveDebtTokenInfo).decimals) * 10000) / 10000
-
+        form.getElementsByClassName("currentAllowance")[0].innerText = roundNumber(ethers.formatUnits(await currentAaveTokenAllowance, (await aaveTokenInfo).decimals),4)
+        form.getElementsByClassName("currentDelegation")[0].innerText = roundNumber(ethers.formatUnits(await currentAaveTokenDelegation, (await aaveDebtTokenInfo).decimals),4)
         form.getElementsByClassName("aaveTokenInput")[0].value = await aaveTokenAddress
         setClass({ classname: "underlyingTokenName", value: (await underlyingTokenInfo).name, rootEl:form })
         setClass({ classname: "underlyingTokenSymbol", value: (await underlyingTokenInfo).symbol, rootEl:form })
@@ -404,7 +477,7 @@ async function setDefaultHealthFactor({ uppiesContract, underlyingTokenAddress, 
         if (healthShouldBeZero) {
             form.getElementsByClassName("minHealthFactorInput")[0].value = 0
         } else {
-            form.getElementsByClassName("minHealthFactorInput")[0].value = 1.1
+            form.getElementsByClassName("minHealthFactorInput")[0].value = 1.2
         }
     }
 
@@ -448,8 +521,7 @@ window.getUppieFromForm = getUppieFromForm
  * @param {{aavePoolInstance:import('../types/ethers-contracts/interfaces/aave/IPool').IPool, runner: ethers.ContractRunner}} param0 
  * @returns {Promise<import('../types/ethers-contracts/interfaces/aave/ICreditDelegationToken').ICreditDelegationToken>}
  */
-async function getDebtToken({ aavePoolInstance, runner, form }) {
-    const underlyingTokenAddress = ethers.getAddress(form.getElementsByClassName("underlyingTokenInput")[0].value)
+async function getDebtToken({ aavePoolInstance, runner, underlyingTokenAddress }) {
     const debtTokenAddress = await aavePoolInstance.getReserveVariableDebtToken(underlyingTokenAddress)
     return ICreditDelegationToken__factory.connect(debtTokenAddress, runner)
 }
@@ -508,7 +580,8 @@ async function setATokenAllowance({ event, uppiesContract, signer, form, allowLo
  * @returns {Promise<ethers.Transaction} tx
  */
 async function setCreditDelegation({ event, uppiesContract, signer, aavePoolInstance, form, allowLowering = false }) {
-    const debtToken = await getDebtToken({ aavePoolInstance, runner: signer, form })
+    const underlyingTokenAddress = form.getElementsByClassName("underlyingTokenInput")[0].value
+    const debtToken = await getDebtToken({ aavePoolInstance, runner: signer, underlyingTokenAddress: underlyingTokenAddress })
     const decimals = await debtToken.decimals()
 
     const allowanceUi = ethers.parseUnits(form.getElementsByClassName("aaveDelegationInput")[0].value, decimals)
@@ -767,7 +840,7 @@ async function main() {
     const aaveOracle = IAaveOracle__factory.connect(await uppiesContract.aaveOracle(), provider)
     window.aaveOracle = aaveOracle
     window.aavePoolInstance = aavePoolInstance
-    listAllUppies({ address: signer.address, uppiesContract,aavePoolInstance, aaveOracle })
+    listAllUppies({ address: signer.address, uppiesContract,aavePoolInstance, aaveOracle, signer })
     window.uppiesContract = uppiesContract
 
     // TODO automatically set filler reward for different token types to also be worth 0.001 eure

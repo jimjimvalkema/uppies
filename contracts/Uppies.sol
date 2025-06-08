@@ -12,8 +12,8 @@ interface IAaveOracle {
 
 /// @title Automatic wallet top-ups using aave deposits/debt 
 /// @author Jim Jim Valkema
-/// @notice TODO
-/// @dev TODO
+/// @notice 
+/// @dev 
 contract Uppies {
     event NewUppie(address indexed payee, uint256 _uppiesIndex);
     event RemovedUppie(address indexed payee, uint256 _uppiesIndex);
@@ -50,15 +50,11 @@ contract Uppies {
         UppieGasSettings gas;
     }
 
-    // factory would simplify code
-    // maybe derive index from signature? 
     mapping(address => mapping(uint256 => Uppie)) public uppiesPerUser;
-
-    /// @custom:gasgolf to enable ui to get all uppies without event scanning. (can be too high. will never be too low)
     mapping(address => uint256) public nextUppieIndexPerUser;       
 
     /// @notice creates new uppie
-    /// @dev TODO
+    /// @dev creates new uppie
     /// @param uppie the new uppie
     function createUppie(
         Uppie memory uppie
@@ -77,7 +73,7 @@ contract Uppies {
     }
 
     /// @notice edits an existing uppie
-    /// @dev TODO
+    /// @dev edits an existing uppie
     /// @param uppie The number of rings from dendrochronological sample
     /// @param _uppiesIndex index of the uppie to edit
     function editUppie(
@@ -114,7 +110,7 @@ contract Uppies {
     }
 
     /// @notice fills an uppie either by withdrawing or borrowing.
-    /// @dev 
+    /// @dev fills an uppie either by withdrawing or borrowing.
     /// @param _uppiesIndex index of the uppie to fill
     /// @param payee owner of the uppie and also payee
     /// @param isSponsored set to true if caller doesn't want compensation for gas
@@ -125,14 +121,13 @@ contract Uppies {
         uint256 recipientBalance = IERC20(uppie.underlyingToken).balanceOf(uppie.recipient);
         bool doWithdraw = uppie.canWithdraw && payeeBalance != 0;
 
-        require(doWithdraw || uppie.canBorrow, "can't withdraw and cant borrow"); // TODO payee balance empty error?
+        require(doWithdraw || uppie.canBorrow, "can't withdraw and cant borrow");
         require(recipientBalance < uppie.topUpThreshold, "user balance not below top-up threshold");
 
         uint256 total;
         uint256 fillerFee;
         uint256 topUpSize;
 
-        // TODO if doWithdraw and isSponsored, we don't need underlyingTokenPrice
         uint256 underlyingTokenPrice = _invertAaveOraclePrice(IAaveOracle(aaveOracle).getAssetPrice(uppie.underlyingToken)); 
 
         if(doWithdraw) {
@@ -148,7 +143,7 @@ contract Uppies {
         }
 
         // check health factor
-        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes to the user to go below the Uppie.minHealthFactor or user is already below it");
+        require(_isSafeHealthFactor(uppie.minHealthFactor, payee),"This uppie will causes the user to go below the Uppie.minHealthFactor or user is already below it");
         
         // send it!
         IERC20(uppie.underlyingToken).transfer(uppie.recipient, topUpSize);

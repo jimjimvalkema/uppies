@@ -101,13 +101,13 @@ async function removeUppieHandler({ index, uppiesContract }) {
     postTxLinkUi(tx.hash)
 }
 
-async function makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie, index}) {
+async function makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie}) {
     const editUppieForm = document.getElementById("createNewUppie").cloneNode(true)
     editUppieForm.id = ""
     const editTitle = document.createElement("h3")
-    editTitle.innerText = `edit uppie ${index}`
+    editTitle.innerText = `edit uppie ${uppie.index}`
     editUppieForm.prepend(editTitle)
-    await initializeUppieForm({ form:editUppieForm, signer, provider, uppiesContract, aavePoolInstance, uppie, uppieIndex:index, type:"edit"})
+    await initializeUppieForm({ form:editUppieForm, signer, provider, uppiesContract, aavePoolInstance, uppie, uppieIndex:uppie.index, type:"edit"})
     const editUppieBtn = editUppieForm.getElementsByClassName("createUppie")[0]
     editUppieBtn.innerText = "edit uppie"
     editUppieForm.hidden = true
@@ -222,7 +222,7 @@ async function listAllUppies({ address, uppiesContract,aavePoolInstance,aaveOrac
         removeUppieBtn.innerText = "remove"
         editUppieBtn.innerText = "show edit"
         removeUppieBtn.addEventListener("click", (event) => removeUppieHandler({ index: uppie.index, uppiesContract }))
-        const editUppieForm = await makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie, index})
+        const editUppieForm = await makeEditUppieFrom({signer, provider, uppiesContract, aavePoolInstance, uppie})
         editUppieBtn.addEventListener("click", (event) => showEditUppieHandler({form:editUppieForm, editUppieBtn }))
         if(uppie.canWithdraw) {
             const aaveTokenInfo = await getTokenInfo({ address: uppie.aaveToken, provider: signer })
